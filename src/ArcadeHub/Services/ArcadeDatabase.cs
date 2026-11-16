@@ -1368,6 +1368,31 @@ public sealed class ArcadeDatabase
         return profiles;
     }
 
+    public bool CanProfileModifySettings(string? profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId))
+            return false;
+
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT CASE
+                WHEN p.IsAdmin = 1 THEN 1
+                ELSE COALESCE(r.CanModifySettings, 1)
+            END
+            FROM UserProfiles p
+            LEFT JOIN ProfilePermissions r
+                ON r.ProfileId = p.Id
+            WHERE p.Id = $id;
+            """;
+
+        command.Parameters.AddWithValue("$id", profileId);
+
+        return Convert.ToInt64(
+            command.ExecuteScalar() ?? 0L) != 0;
+    }
+
     public bool CanProfileManageEmulators(string? profileId)
     {
         if (string.IsNullOrWhiteSpace(profileId))

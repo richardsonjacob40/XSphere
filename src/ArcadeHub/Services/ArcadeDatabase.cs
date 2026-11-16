@@ -70,6 +70,8 @@ public sealed class ArcadeDatabase
             """;
         profilesCommand.ExecuteNonQuery();
 
+        InitializeProfilePermissions(connection);
+
         // Migrate older databases without deleting existing profiles.
         var existingColumns = new HashSet<string>(
             StringComparer.OrdinalIgnoreCase);
@@ -104,6 +106,98 @@ public sealed class ArcadeDatabase
                 $"ALTER TABLE UserProfiles ADD COLUMN {column.Key} {column.Value};";
             migration.ExecuteNonQuery();
         }
+    }
+
+
+    private void InitializeProfilePermissions(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS ProfilePermissions (
+                ProfileId TEXT PRIMARY KEY,
+                CanLaunchGames INTEGER NOT NULL DEFAULT 1,
+                CanManageEmulators INTEGER NOT NULL DEFAULT 1,
+                CanModifySettings INTEGER NOT NULL DEFAULT 1,
+                CanManageProfiles INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (ProfileId) REFERENCES UserProfiles(Id)
+            );
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    public ProfilePermissions GetProfilePermissions(string profileId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT p.IsAdmin,
+                   COALESCE(r.CanLaunchGames, 1),
+                   COALESCE(r.CanManageEmulators, 1),
+                   COALESCE(r.CanModifySettings, 1),
+                   COALESCE(r.CanManageProfiles, 0)
+            FROM UserProfiles p
+            LEFT JOIN ProfilePermissions r ON r.ProfileId = p.Id
+            WHERE p.Id = $id;
+            """;
+
+        command.Parameters.AddWithValue("$id", profileId);
+
+        using var reader = command.ExecuteReader();
+
+        if (!reader.Read())
+            throw new InvalidOperationException("Profile not found.");
+
+        bool isAdmin = reader.GetInt64(0) != 0;
+
+        return new ProfilePermissions
+        {
+            ProfileId = profileId,
+            CanLaunchGames = isAdmin || reader.GetInt64(1) != 0,
+            CanManageEmulators = isAdmin || reader.GetInt64(2) != 0,
+            CanModifySettings = isAdmin || reader.GetInt64(3) != 0,
+            CanManageProfiles = isAdmin || reader.GetInt64(4) != 0
+        };
+    }
+
+    // Storage-only operation. Caller authorization must be verified
+    // before this method is exposed through the interface.
+    public void SaveProfilePermissions(ProfilePermissions permissions)
+    {
+        ArgumentNullException.ThrowIfNull(permissions);
+
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            INSERT INTO ProfilePermissions
+                (ProfileId, CanLaunchGames, CanManageEmulators,
+                 CanModifySettings, CanManageProfiles)
+            SELECT $id, $games, $emulators, $settings, $profiles
+            WHERE EXISTS (
+                SELECT 1 FROM UserProfiles
+                WHERE Id = $id AND IsAdmin = 0
+            )
+            ON CONFLICT(ProfileId) DO UPDATE SET
+                CanLaunchGames = excluded.CanLaunchGames,
+                CanManageEmulators = excluded.CanManageEmulators,
+                CanModifySettings = excluded.CanModifySettings,
+                CanManageProfiles = excluded.CanManageProfiles;
+            """;
+
+        command.Parameters.AddWithValue("$id", permissions.ProfileId);
+        command.Parameters.AddWithValue(
+            "$games", permissions.CanLaunchGames ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$emulators", permissions.CanManageEmulators ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$settings", permissions.CanModifySettings ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$profiles", permissions.CanManageProfiles ? 1 : 0);
+
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "Profile not found or administrator permissions cannot be changed.");
     }
 
     public List<UserProfile> GetUserProfiles()

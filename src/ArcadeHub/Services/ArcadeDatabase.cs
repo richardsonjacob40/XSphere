@@ -1368,10 +1368,73 @@ public sealed class ArcadeDatabase
         return profiles;
     }
 
-    public void SaveEmulator(EmulatorProfile profile)
+    public bool CanProfileManageEmulators(string? profileId)
     {
+        if (string.IsNullOrWhiteSpace(profileId))
+            return false;
+
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT CASE
+                WHEN p.IsAdmin = 1 THEN 1
+                ELSE COALESCE(r.CanManageEmulators, 1)
+            END
+            FROM UserProfiles p
+            LEFT JOIN ProfilePermissions r
+                ON r.ProfileId = p.Id
+            WHERE p.Id = $id;
+            """;
+
+        command.Parameters.AddWithValue("$id", profileId);
+
+        return Convert.ToInt64(
+            command.ExecuteScalar() ?? 0L) != 0;
+    }
+
+    private static void RequireEmulatorManagementPermission(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string? actingProfileId)
+    {
+        if (string.IsNullOrWhiteSpace(actingProfileId))
+            throw new UnauthorizedAccessException(
+                "Emulator management denied: No active profile.");
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+
+        command.CommandText = """
+            SELECT CASE
+                WHEN p.IsAdmin = 1 THEN 1
+                ELSE COALESCE(r.CanManageEmulators, 1)
+            END
+            FROM UserProfiles p
+            LEFT JOIN ProfilePermissions r
+                ON r.ProfileId = p.Id
+            WHERE p.Id = $id;
+            """;
+
+        command.Parameters.AddWithValue("$id", actingProfileId);
+
+        if (Convert.ToInt64(command.ExecuteScalar() ?? 0L) != 1)
+            throw new UnauthorizedAccessException(
+                "Emulator management denied: Insufficient permissions.");
+    }
+
+    public void SaveEmulator(
+        EmulatorProfile profile,
+        string? actingProfileId)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        RequireEmulatorManagementPermission(
+            connection, transaction, actingProfileId);
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO Emulators (Id, Name, System, ExecutablePath, ArgumentsTemplate)
             VALUES ($id, $name, $system, $executable, $arguments)
@@ -1387,15 +1450,25 @@ public sealed class ArcadeDatabase
         command.Parameters.AddWithValue("$executable", profile.ExecutablePath);
         command.Parameters.AddWithValue("$arguments", profile.ArgumentsTemplate);
         command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
-    public void DeleteEmulator(string id)
+    public void DeleteEmulator(
+        string id,
+        string? actingProfileId)
     {
         using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        RequireEmulatorManagementPermission(
+            connection, transaction, actingProfileId);
+
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "DELETE FROM Emulators WHERE Id = $id;";
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     public List<string> GetRomFolders()

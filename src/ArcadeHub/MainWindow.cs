@@ -2380,6 +2380,16 @@ private async Task DownloadGameCoverAsync(Game game)
     private Control BuildEmulatorsPage()
     {
         var page = new StackPanel { Spacing = 16 };
+
+        var canManageEmulators =
+            _database.CanProfileManageEmulators(_activeProfile?.Id);
+
+        if (!canManageEmulators)
+        {
+            page.Children.Add(Text(
+                "Read-only access: Your profile cannot manage emulator configurations.",
+                13, MutedBrush));
+        }
         page.Children.Add(Text("Connect the emulators already on your computer. Each profile is linked to a system.", 13, MutedBrush));
 
         var form = new Border { Background = PanelBrush, CornerRadius = new CornerRadius(20), Padding = new Thickness(18) };
@@ -2423,17 +2433,26 @@ private async Task DownloadGameCoverAsync(Game game)
                 return;
             }
 
-            _database.SaveEmulator(new EmulatorProfile
+            try
             {
-                Id = editingEmulatorId ?? Guid.NewGuid().ToString("N"),
-                Name = name,
-                System = system,
-                ExecutablePath = executable,
-                ArgumentsTemplate = argsBox.Text?.Trim() ?? "\"{rom}\""
-            });
-            RefreshData();
-            SetStatus($"Saved emulator profile: {name}");
-            RenderCurrentPage();
+                _database.SaveEmulator(new EmulatorProfile
+                {
+                    Id = editingEmulatorId ?? Guid.NewGuid().ToString("N"),
+                    Name = name,
+                    System = system,
+                    ExecutablePath = executable,
+                    ArgumentsTemplate = argsBox.Text?.Trim() ?? "\"{rom}\""
+                }, _activeProfile?.Id);
+
+                RefreshData();
+                SetStatus($"Saved emulator profile: {name}");
+                RenderCurrentPage();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                SetStatus(ex.Message);
+                RenderCurrentPage();
+            }
         };
 
         formStack.Children.Add(nameBox);
@@ -2460,7 +2479,8 @@ private async Task DownloadGameCoverAsync(Game game)
         formStack.Children.Add(cancelEditButton);
 
         form.Child = formStack;
-        page.Children.Add(form);
+        if (canManageEmulators)
+            page.Children.Add(form);
 
         page.Children.Add(Text($"Configured emulators ({_emulators.Count})", 17, MainTextBrush, true));
         if (_emulators.Count == 0)
@@ -2507,13 +2527,25 @@ private async Task DownloadGameCoverAsync(Game game)
             remove.VerticalAlignment = VerticalAlignment.Center;
             remove.Click += (_, _) =>
             {
-                _database.DeleteEmulator(emulator.Id);
-                RefreshData();
-                RenderCurrentPage();
+                try
+                {
+                    _database.DeleteEmulator(
+                        emulator.Id, _activeProfile?.Id);
+
+                    RefreshData();
+                    SetStatus("Removed emulator: " + emulator.Name);
+                    RenderCurrentPage();
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    SetStatus(ex.Message);
+                    RenderCurrentPage();
+                }
             };
             actions.Children.Add(remove);
             Grid.SetColumn(actions, 1);
-            row.Children.Add(actions);
+            if (canManageEmulators)
+                row.Children.Add(actions);
             page.Children.Add(row);
         }
 

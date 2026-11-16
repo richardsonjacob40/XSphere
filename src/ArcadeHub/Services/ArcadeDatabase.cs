@@ -8,13 +8,28 @@ public sealed class ArcadeDatabase
 {
     private readonly string _connectionString;
 
-    public ArcadeDatabase()
+    public ArcadeDatabase(string? databasePath = null)
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var folder = Path.Combine(appData, "ArcadeHub");
-        Directory.CreateDirectory(folder);
-        var databasePath = Path.Combine(folder, "arcadehub.db");
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString();
+        if (databasePath is null)
+        {
+            var appData = Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData);
+            var folder = Path.Combine(appData, "ArcadeHub");
+            Directory.CreateDirectory(folder);
+            databasePath = Path.Combine(folder, "arcadehub.db");
+        }
+        else
+        {
+            databasePath = Path.GetFullPath(databasePath);
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(databasePath)!);
+        }
+
+        _connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath
+        }.ToString();
+
         Initialize();
     }
 
@@ -160,44 +175,187 @@ public sealed class ArcadeDatabase
         };
     }
 
-    // Storage-only operation. Caller authorization must be verified
-    // before this method is exposed through the interface.
-    public void SaveProfilePermissions(ProfilePermissions permissions)
+    // Authenticates the administrator and saves permissions atomically.
+    public bool ChangeProfilePermissions(
+        string actingAdminId,
+        string actingAdminPin,
+        ProfilePermissions permissions)
     {
         ArgumentNullException.ThrowIfNull(permissions);
 
+        if (!ProfileSecurityService.IsValidPin(actingAdminPin))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(actingAdminId) ||
+            string.IsNullOrWhiteSpace(permissions.ProfileId) ||
+            actingAdminId == permissions.ProfileId)
+            return false;
+
         using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
 
-        command.CommandText = """
-            INSERT INTO ProfilePermissions
-                (ProfileId, CanLaunchGames, CanManageEmulators,
-                 CanModifySettings, CanManageProfiles)
-            SELECT $id, $games, $emulators, $settings, $profiles
-            WHERE EXISTS (
-                SELECT 1 FROM UserProfiles
-                WHERE Id = $id AND IsAdmin = 0
-            )
-            ON CONFLICT(ProfileId) DO UPDATE SET
-                CanLaunchGames = excluded.CanLaunchGames,
-                CanManageEmulators = excluded.CanManageEmulators,
-                CanModifySettings = excluded.CanModifySettings,
-                CanManageProfiles = excluded.CanManageProfiles;
-            """;
+        using (var begin = connection.CreateCommand())
+        {
+            begin.CommandText = "BEGIN IMMEDIATE;";
+            begin.ExecuteNonQuery();
+        }
 
-        command.Parameters.AddWithValue("$id", permissions.ProfileId);
-        command.Parameters.AddWithValue(
-            "$games", permissions.CanLaunchGames ? 1 : 0);
-        command.Parameters.AddWithValue(
-            "$emulators", permissions.CanManageEmulators ? 1 : 0);
-        command.Parameters.AddWithValue(
-            "$settings", permissions.CanModifySettings ? 1 : 0);
-        command.Parameters.AddWithValue(
-            "$profiles", permissions.CanManageProfiles ? 1 : 0);
+        bool committed = false;
 
-        if (command.ExecuteNonQuery() != 1)
-            throw new InvalidOperationException(
-                "Profile not found or administrator permissions cannot be changed.");
+        try
+        {
+            string hash;
+            string salt;
+            int iterations;
+            int attempts;
+            string? lockedUntil;
+
+            using (var lookup = connection.CreateCommand())
+            {
+                lookup.CommandText = """
+                    SELECT PinHash, PinSalt, PinIterations,
+                           FailedPinAttempts, PinLockedUntilUtc
+                    FROM UserProfiles
+                    WHERE Id = $id AND IsAdmin = 1;
+                    """;
+
+                lookup.Parameters.AddWithValue("$id", actingAdminId);
+
+                using var reader = lookup.ExecuteReader();
+
+                if (!reader.Read() ||
+                    reader.IsDBNull(0) ||
+                    reader.IsDBNull(1))
+                    return false;
+
+                hash = reader.GetString(0);
+                salt = reader.GetString(1);
+                iterations = reader.GetInt32(2);
+                attempts = reader.GetInt32(3);
+                lockedUntil = reader.IsDBNull(4)
+                    ? null : reader.GetString(4);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+
+            if (lockedUntil is not null &&
+                DateTimeOffset.TryParse(
+                    lockedUntil, out var expiration) &&
+                now < expiration)
+                return false;
+
+            if (lockedUntil is not null)
+                attempts = 0;
+
+            bool valid = ProfileSecurityService.VerifyPin(
+                actingAdminPin, hash, salt, iterations);
+
+            if (!valid)
+            {
+                attempts++;
+
+                string? nextLockout = null;
+
+                if (attempts >= 5)
+                {
+                    attempts = 0;
+                    nextLockout = now.AddMinutes(5).ToString("O");
+                }
+
+                using (var failure = connection.CreateCommand())
+                {
+                    failure.CommandText = """
+                        UPDATE UserProfiles
+                        SET FailedPinAttempts = $attempts,
+                            PinLockedUntilUtc = $locked
+                        WHERE Id = $id AND IsAdmin = 1;
+                        """;
+
+                    failure.Parameters.AddWithValue(
+                        "$attempts", attempts);
+                    failure.Parameters.AddWithValue(
+                        "$locked",
+                        (object?)nextLockout ?? DBNull.Value);
+                    failure.Parameters.AddWithValue(
+                        "$id", actingAdminId);
+
+                    failure.ExecuteNonQuery();
+                }
+
+                using (var commitFailure = connection.CreateCommand())
+                {
+                    commitFailure.CommandText = "COMMIT;";
+                    commitFailure.ExecuteNonQuery();
+                }
+
+                committed = true;
+                return false;
+            }
+
+            // Clear previous failures after successful verification.
+            using (var reset = connection.CreateCommand())
+            {
+                reset.CommandText = """
+                    UPDATE UserProfiles
+                    SET FailedPinAttempts = 0,
+                        PinLockedUntilUtc = NULL
+                    WHERE Id = $id AND IsAdmin = 1;
+                    """;
+
+                reset.Parameters.AddWithValue("$id", actingAdminId);
+                reset.ExecuteNonQuery();
+            }
+
+            // Administrator permissions cannot be modified here.
+            using (var save = connection.CreateCommand())
+            {
+                save.CommandText = """
+                    INSERT INTO ProfilePermissions
+                        (ProfileId, CanLaunchGames,
+                         CanManageEmulators, CanModifySettings,
+                         CanManageProfiles)
+                    SELECT Id, $games, $emulators, $settings, $profiles
+                    FROM UserProfiles
+                    WHERE Id = $target AND IsAdmin = 0
+                    ON CONFLICT(ProfileId) DO UPDATE SET
+                        CanLaunchGames = excluded.CanLaunchGames,
+                        CanManageEmulators = excluded.CanManageEmulators,
+                        CanModifySettings = excluded.CanModifySettings,
+                        CanManageProfiles = excluded.CanManageProfiles;
+                    """;
+
+                save.Parameters.AddWithValue(
+                    "$target", permissions.ProfileId);
+                save.Parameters.AddWithValue(
+                    "$games", permissions.CanLaunchGames ? 1 : 0);
+                save.Parameters.AddWithValue(
+                    "$emulators", permissions.CanManageEmulators ? 1 : 0);
+                save.Parameters.AddWithValue(
+                    "$settings", permissions.CanModifySettings ? 1 : 0);
+                save.Parameters.AddWithValue(
+                    "$profiles", permissions.CanManageProfiles ? 1 : 0);
+
+                if (save.ExecuteNonQuery() != 1)
+                    return false;
+            }
+
+            using (var commit = connection.CreateCommand())
+            {
+                commit.CommandText = "COMMIT;";
+                commit.ExecuteNonQuery();
+            }
+
+            committed = true;
+            return true;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                using var rollback = connection.CreateCommand();
+                rollback.CommandText = "ROLLBACK;";
+                rollback.ExecuteNonQuery();
+            }
+        }
     }
 
     public List<UserProfile> GetUserProfiles()

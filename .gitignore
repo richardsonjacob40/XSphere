@@ -1,0 +1,54 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.bak
+*.working
+*.before-*
+*.phase-*
+ArcadeHub_16_Avatars.zip
+
+# Historical source-code backups
+*.backup
+*.backup[0-9]*
+*.working-*
+*.pre-*
+*.failed-*
+*.stable
+*.titanium-stable
+*.transitions-stable
+*.animations-stable
+*.profile-*-working
+*.admin-*-working
+*.first-admin-working
+*.secure-edit-working
+*.pin-change-lockout-working
+
+# Duplicate avatar archive
+ArcadeHub_16_Avatars.zip
+
+# ArcadeHub historical backups
+*.backup*
+*.working*
+*.pre-*
+*.failed-*
+*.stable
+*.titanium-stable
+*.transitions-stable
+*.animations-stable
+*.profile-*-working
+*.admin-*-working
+*.first-admin-working
+*.secure-edit-working
+*.pin-change-lockout-working
+
+# Duplicate avatar archive
+ArcadeHub_16_Avatars.zip

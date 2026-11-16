@@ -3143,6 +3143,226 @@ private async Task DownloadGameCoverAsync(Game game)
             }
         }
 
+
+        // PROFILE PERMISSIONS PANEL
+        if (_activeProfile is not null)
+        {
+            var allProfiles = _database.GetUserProfiles();
+
+            var actingAdmin = allProfiles.FirstOrDefault(p =>
+                p.Id == _activeProfile.Id && p.IsAdmin);
+
+            if (actingAdmin is not null)
+            {
+                var standardProfiles = allProfiles
+                    .Where(p => !p.IsAdmin)
+                    .ToList();
+
+                var permissionsSection = new StackPanel
+                {
+                    Spacing = 12
+                };
+
+                permissionsSection.Children.Add(
+                    Text("PROFILE PERMISSIONS",
+                        18, MainTextBrush, true));
+
+                permissionsSection.Children.Add(
+                    Text(
+                        "Configure standard profile access. " +
+                        "Changes require your administrator PIN.",
+                        13, MutedBrush,
+                        wrapping: TextWrapping.Wrap));
+
+                if (standardProfiles.Count == 0)
+                {
+                    permissionsSection.Children.Add(
+                        Text("No standard profiles available.",
+                            13, MutedBrush));
+                }
+                else
+                {
+                    var profileSelector = new ComboBox
+                    {
+                        Width = 260,
+                        HorizontalAlignment =
+                            HorizontalAlignment.Left,
+                        ItemsSource = standardProfiles
+                            .Select(p => p.Name)
+                            .ToList(),
+                        SelectedIndex = 0
+                    };
+
+                    permissionsSection.Children.Add(
+                        Text("Select standard profile",
+                            13, MainTextBrush));
+
+                    permissionsSection.Children.Add(profileSelector);
+
+                    var gamesCheck = new CheckBox
+                    {
+                        Content = "Allow launching games"
+                    };
+
+                    var emulatorsCheck = new CheckBox
+                    {
+                        Content = "Allow managing emulators"
+                    };
+
+                    var settingsCheck = new CheckBox
+                    {
+                        Content = "Allow modifying settings"
+                    };
+
+                    permissionsSection.Children.Add(gamesCheck);
+                    permissionsSection.Children.Add(emulatorsCheck);
+                    permissionsSection.Children.Add(settingsCheck);
+
+                    permissionsSection.Children.Add(
+                        Text(
+                            "Profile management remains " +
+                            "administrator-only.",
+                            12, MutedBrush,
+                            wrapping: TextWrapping.Wrap));
+
+                    var pinBox = NewTextBox(
+                        "Your administrator PIN");
+
+                    pinBox.PasswordChar = '●';
+                    pinBox.MaxLength = 8;
+
+                    permissionsSection.Children.Add(
+                        Text("Administrator verification",
+                            13, MainTextBrush));
+
+                    permissionsSection.Children.Add(pinBox);
+
+                    var feedback = Text("", 13, MutedBrush);
+                    permissionsSection.Children.Add(feedback);
+
+                    void LoadPermissions()
+                    {
+                        int index = profileSelector.SelectedIndex;
+
+                        if (index < 0 ||
+                            index >= standardProfiles.Count)
+                            return;
+
+                        var target = standardProfiles[index];
+                        var permissions =
+                            _database.GetProfilePermissions(target.Id);
+
+                        gamesCheck.IsChecked =
+                            permissions.CanLaunchGames;
+
+                        emulatorsCheck.IsChecked =
+                            permissions.CanManageEmulators;
+
+                        settingsCheck.IsChecked =
+                            permissions.CanModifySettings;
+
+                        pinBox.Text = "";
+                        feedback.Text = "";
+                    }
+
+                    profileSelector.SelectionChanged += (_, _) =>
+                        LoadPermissions();
+
+                    LoadPermissions();
+
+                    var saveButton = MakeButton(
+                        "Save Permissions",
+                        AccentBrush,
+                        BackgroundBrush);
+
+                    saveButton.HorizontalAlignment =
+                        HorizontalAlignment.Left;
+
+                    saveButton.Click += (_, _) =>
+                    {
+                        int index = profileSelector.SelectedIndex;
+
+                        if (index < 0 ||
+                            index >= standardProfiles.Count)
+                        {
+                            feedback.Text = "Select a profile.";
+                            return;
+                        }
+
+                        string pin = pinBox.Text ?? "";
+
+                        if (!ProfileSecurityService.IsValidPin(pin))
+                        {
+                            feedback.Text =
+                                "Enter your administrator PIN.";
+                            return;
+                        }
+
+                        var target = standardProfiles[index];
+
+                        var updatedPermissions =
+                            new ProfilePermissions
+                            {
+                                ProfileId = target.Id,
+                                CanLaunchGames =
+                                    gamesCheck.IsChecked == true,
+                                CanManageEmulators =
+                                    emulatorsCheck.IsChecked == true,
+                                CanModifySettings =
+                                    settingsCheck.IsChecked == true,
+                                CanManageProfiles = false
+                            };
+
+                        try
+                        {
+                            bool updated =
+                                _database.ChangeProfilePermissions(
+                                    actingAdmin.Id,
+                                    pin,
+                                    updatedPermissions);
+
+                            pinBox.Text = "";
+
+                            if (!updated)
+                            {
+                                feedback.Text =
+                                    _database.IsProfilePinLocked(
+                                        actingAdmin.Id)
+                                        ? "Administrator PIN temporarily locked. " +
+                                          "Please wait five minutes and try again."
+                                        : "Permission update denied. " +
+                                          "Check your administrator PIN.";
+                                return;
+                            }
+
+                            feedback.Text =
+                                "Profile permissions saved successfully.";
+                        }
+                        catch (Exception ex)
+                        {
+                            pinBox.Text = "";
+                            feedback.Text =
+                                "Could not save permissions: " +
+                                ex.Message;
+                        }
+                    };
+
+                    permissionsSection.Children.Add(saveButton);
+                }
+
+                page.Children.Add(new Border
+                {
+                    Background = PanelBrush,
+                    BorderBrush = GlassBorderBrush(),
+                    BoxShadow = ThemeGlow(),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(16),
+                    Padding = new Thickness(20),
+                    Child = permissionsSection
+                });
+            }
+        }
+
         // FEATURED GAME APPEARANCE SETTINGS
         var appearanceSection = new StackPanel
         {

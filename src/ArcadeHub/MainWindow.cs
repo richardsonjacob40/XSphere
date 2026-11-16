@@ -3916,6 +3916,24 @@ RenderCurrentPage();
 {
     try
     {
+        // Enforce profile permissions at the launch boundary.
+        if (_activeProfile is null)
+        {
+            SetStatus("Game launch denied: No active profile.");
+            return;
+        }
+
+        var permissions =
+            _database.GetProfilePermissions(_activeProfile.Id);
+
+        if (!permissions.CanLaunchGames)
+        {
+            SetStatus(
+                "Game launch denied: Your profile does not " +
+                "have permission to launch games.");
+            return;
+        }
+
         // Start the emulator and get its process.
         using var emulatorProcess =
             _launcher.Launch(game, _emulators);

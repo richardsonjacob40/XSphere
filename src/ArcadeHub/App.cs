@@ -15,6 +15,7 @@ public sealed class App : Application
     private DispatcherTimer? _controllerTimer;
     private bool? _lastControllerConnected;
     private bool _previousDpadDown;
+    private bool _previousDpadUp;
 
     public override void Initialize()
     {
@@ -82,17 +83,26 @@ public sealed class App : Application
                                 _controllerService.IsButtonPressed(
                                     ControllerButton.DpadDown);
 
-                            if (dpadDown && !_previousDpadDown)
+                            bool dpadUp =
+                                _controllerService.IsButtonPressed(
+                                    ControllerButton.DpadUp);
+
+                            if (desktop.MainWindow is MainWindow window)
                             {
-                                Console.WriteLine(
-                                    "[ArcadeHub] D-pad Down pressed");
+                                if (dpadDown && !_previousDpadDown)
+                                    window.ControllerMoveSidebarSelection(1);
+
+                                if (dpadUp && !_previousDpadUp)
+                                    window.ControllerMoveSidebarSelection(-1);
                             }
 
                             _previousDpadDown = dpadDown;
+                            _previousDpadUp = dpadUp;
                         }
                         else
                         {
                             _previousDpadDown = false;
+                            _previousDpadUp = false;
                         }
 
                         if (connected != _lastControllerConnected)

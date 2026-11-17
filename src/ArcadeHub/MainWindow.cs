@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 // SOFT ROUNDED UI
 using System.Collections.Generic;
@@ -185,6 +186,44 @@ public sealed class MainWindow : Window
         _appSettings = new ArcadeHub.Services.AppSettingsService().Load();
 
     private UserProfile? _activeProfile;
+
+    // Controller sidebar selection.
+    private static readonly string[] ControllerSidebarPages =
+    {
+        "Home",
+        "Library",
+        "Favorites",
+        "Emulators",
+        "Folders",
+        "Saves",
+        "Settings"
+    };
+
+    private int _controllerSidebarIndex = 0;
+
+    public void ControllerMoveSidebarSelection(int direction)
+    {
+        // Never navigate the dashboard before profile authentication.
+        if (_activeProfile is null)
+            return;
+
+        if (direction == 0)
+            return;
+
+        _controllerSidebarIndex =
+            (_controllerSidebarIndex +
+             (direction > 0 ? 1 : -1) +
+             ControllerSidebarPages.Length)
+            % ControllerSidebarPages.Length;
+
+        Console.WriteLine(
+            $"[ArcadeHub] Controller selection: " +
+            ControllerSidebarPages[_controllerSidebarIndex]);
+
+        RebuildShell();
+    }
+
+
 
 
     // GAME DETAILS PAGE FEATURE
@@ -1387,6 +1426,14 @@ button.VerticalContentAlignment =
     VerticalAlignment.Center;
 
         ToolTip.SetTip(button, tooltip);
+
+        // Highlight the sidebar item selected by the controller.
+        if (_activeProfile is not null &&
+            ControllerSidebarPages[_controllerSidebarIndex] == page)
+        {
+            button.BorderBrush = AccentBrush;
+            button.BorderThickness = new Thickness(2);
+        }
 
         button.Click += (_, _) => Navigate(page);
 

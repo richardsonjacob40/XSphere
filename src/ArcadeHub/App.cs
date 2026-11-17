@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using ArcadeHub.Services;
+using ArcadeHub.Models;
 using Avalonia.Threading;
 
 namespace ArcadeHub;
@@ -13,6 +14,7 @@ public sealed class App : Application
     private ControllerService? _controllerService;
     private DispatcherTimer? _controllerTimer;
     private bool? _lastControllerConnected;
+    private bool _previousDpadDown;
 
     public override void Initialize()
     {
@@ -59,7 +61,7 @@ public sealed class App : Application
             {
                 _controllerTimer = new DispatcherTimer
                 {
-                    Interval = TimeSpan.FromMilliseconds(500)
+                    Interval = TimeSpan.FromMilliseconds(16)
                 };
 
                 _controllerTimer.Tick += (_, _) =>
@@ -71,6 +73,27 @@ public sealed class App : Application
                     {
                         bool connected =
                             _controllerService.RefreshControllerConnection();
+
+                        if (connected)
+                        {
+                            _controllerService.UpdateInput();
+
+                            bool dpadDown =
+                                _controllerService.IsButtonPressed(
+                                    ControllerButton.DpadDown);
+
+                            if (dpadDown && !_previousDpadDown)
+                            {
+                                Console.WriteLine(
+                                    "[ArcadeHub] D-pad Down pressed");
+                            }
+
+                            _previousDpadDown = dpadDown;
+                        }
+                        else
+                        {
+                            _previousDpadDown = false;
+                        }
 
                         if (connected != _lastControllerConnected)
                         {

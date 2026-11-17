@@ -4,25 +4,25 @@ namespace ArcadeHub.Models;
 // SDL3 standard gamepad button values.
 public enum ControllerButton
 {
-    South = 1,        // Xbox A
-    East = 2,         // Xbox B
-    West = 3,         // Xbox X
-    North = 4,        // Xbox Y
+    South = 0,        // Xbox A
+    East = 1,         // Xbox B
+    West = 2,         // Xbox X
+    North = 3,        // Xbox Y
 
-    Back = 5,
-    Guide = 6,
-    Start = 7,
+    Back = 4,
+    Guide = 5,
+    Start = 6,
 
-    LeftStick = 8,
-    RightStick = 9,
+    LeftStick = 7,
+    RightStick = 8,
 
-    LeftShoulder = 10,
-    RightShoulder = 11,
+    LeftShoulder = 9,
+    RightShoulder = 10,
 
-    DpadUp = 12,
-    DpadDown = 13,
-    DpadLeft = 14,
-    DpadRight = 15
+    DpadUp = 11,
+    DpadDown = 12,
+    DpadLeft = 13,
+    DpadRight = 14
 }
 
 // SDL3 standard gamepad axis values.

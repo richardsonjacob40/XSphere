@@ -1,3 +1,4 @@
+using ArcadeHub.Models;
 
 using System;
 using System.Collections.Generic;
@@ -9,6 +10,7 @@ public sealed class ControllerService : IDisposable
 {
     private const uint SDL_INIT_GAMEPAD = 0x00002000;
     private bool _initialized;
+    private IntPtr _gamepad = IntPtr.Zero;
 
     [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]
@@ -74,8 +76,87 @@ public sealed class ControllerService : IDisposable
         return controllers;
     }
 
+
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr SDL_OpenGamepad(uint instanceId);
+
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void SDL_CloseGamepad(IntPtr gamepad);
+
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void SDL_UpdateGamepads();
+
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool SDL_GetGamepadButton(
+        IntPtr gamepad, ControllerButton button);
+
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+    private static extern short SDL_GetGamepadAxis(
+        IntPtr gamepad, ControllerAxis axis);
+
+    public bool OpenController(int index = 0)
+    {
+        if (!_initialized)
+            throw new InvalidOperationException(
+                "Controller service has not been initialized.");
+
+        CloseController();
+
+        IntPtr ids = SDL_GetGamepads(out int count);
+
+        if (ids == IntPtr.Zero)
+            return false;
+
+        try
+        {
+            if (index < 0 || index >= count)
+                return false;
+
+            uint id = unchecked(
+                (uint)Marshal.ReadInt32(ids, index * sizeof(uint)));
+
+            _gamepad = SDL_OpenGamepad(id);
+            return _gamepad != IntPtr.Zero;
+        }
+        finally
+        {
+            SDL_free(ids);
+        }
+    }
+
+    public void UpdateInput()
+    {
+        if (_gamepad != IntPtr.Zero)
+            SDL_UpdateGamepads();
+    }
+
+    public bool IsButtonPressed(ControllerButton button)
+    {
+        return _gamepad != IntPtr.Zero &&
+               SDL_GetGamepadButton(_gamepad, button);
+    }
+
+    public short GetAxisValue(ControllerAxis axis)
+    {
+        return _gamepad == IntPtr.Zero
+            ? (short)0
+            : SDL_GetGamepadAxis(_gamepad, axis);
+    }
+
+    public void CloseController()
+    {
+        if (_gamepad == IntPtr.Zero)
+            return;
+
+        SDL_CloseGamepad(_gamepad);
+        _gamepad = IntPtr.Zero;
+    }
+
     public void Dispose()
     {
+        CloseController();
+
         if (!_initialized)
             return;
 

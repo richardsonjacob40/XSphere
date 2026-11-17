@@ -45,7 +45,7 @@ public sealed class ControllerService : IDisposable
         if (!_initialized)
             throw new InvalidOperationException(
                 "Controller service has not been initialized.");
-
+        SDL_PumpEvents();
         var controllers = new List<string>();
         IntPtr ids = SDL_GetGamepads(out int count);
 
@@ -85,6 +85,9 @@ public sealed class ControllerService : IDisposable
 
     [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
     private static extern void SDL_UpdateGamepads();
+
+[DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+private static extern void SDL_PumpEvents();
 
     [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]

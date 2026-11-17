@@ -21,6 +21,9 @@ public sealed class CoverArtService
         Timeout = TimeSpan.FromSeconds(12)
     };
 
+    // Limit concurrent artwork downloads to reduce resource usage.
+    private static readonly SemaphoreSlim DownloadLimit = new(3, 3);
+
     private readonly string _cacheDirectory;
 
     public CoverArtService()
@@ -66,6 +69,20 @@ public async Task SaveCustomCoverAsync(Game game, string sourcePath)
         File.Exists(GetCoverPath(game));
 
     public async Task<bool> DownloadCoverAsync(Game game)
+    {
+        await DownloadLimit.WaitAsync();
+
+        try
+        {
+            return await DownloadCoverCoreAsync(game);
+        }
+        finally
+        {
+            DownloadLimit.Release();
+        }
+    }
+
+    private async Task<bool> DownloadCoverCoreAsync(Game game)
     {
         var destination = GetCoverPath(game);
 

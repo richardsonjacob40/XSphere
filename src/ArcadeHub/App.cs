@@ -16,6 +16,7 @@ public sealed class App : Application
     private bool? _lastControllerConnected;
     private bool _previousDpadDown;
     private bool _previousDpadUp;
+    private bool _previousButtonA;
 
     public override void Initialize()
     {
@@ -87,6 +88,10 @@ public sealed class App : Application
                                 _controllerService.IsButtonPressed(
                                     ControllerButton.DpadUp);
 
+                            bool buttonA =
+                                _controllerService.IsButtonPressed(
+                                    ControllerButton.South);
+
                             if (desktop.MainWindow is MainWindow window)
                             {
                                 if (dpadDown && !_previousDpadDown)
@@ -94,15 +99,20 @@ public sealed class App : Application
 
                                 if (dpadUp && !_previousDpadUp)
                                     window.ControllerMoveSidebarSelection(-1);
+
+                                if (buttonA && !_previousButtonA)
+                                    window.ControllerActivateSidebarSelection();
                             }
 
                             _previousDpadDown = dpadDown;
                             _previousDpadUp = dpadUp;
+                            _previousButtonA = buttonA;
                         }
                         else
                         {
                             _previousDpadDown = false;
                             _previousDpadUp = false;
+                            _previousButtonA = false;
                         }
 
                         if (connected != _lastControllerConnected)

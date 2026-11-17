@@ -201,6 +201,40 @@ public sealed class MainWindow : Window
 
     private int _controllerSidebarIndex = 0;
 
+    // Keep references to the current sidebar buttons.
+    private readonly Dictionary<string, Button> _controllerSidebarButtons = new();
+
+    private void UpdateControllerSidebarHighlight()
+    {
+        foreach (var entry in _controllerSidebarButtons)
+        {
+            bool selected = _activeProfile is not null &&
+                ControllerSidebarPages[_controllerSidebarIndex] == entry.Key;
+
+            entry.Value.BorderBrush = selected
+                ? AccentBrush
+                : Brushes.Transparent;
+
+            entry.Value.BorderThickness = selected
+                ? new Thickness(2)
+                : new Thickness(0);
+        }
+    }
+
+    public void ControllerActivateSidebarSelection()
+    {
+        // Prevent controller navigation before profile authentication.
+        if (_activeProfile is null)
+            return;
+
+        string page = ControllerSidebarPages[_controllerSidebarIndex];
+
+        Console.WriteLine(
+            $"[ArcadeHub] Controller opening page: {page}");
+
+        Navigate(page);
+    }
+
     public void ControllerMoveSidebarSelection(int direction)
     {
         // Never navigate the dashboard before profile authentication.
@@ -220,7 +254,7 @@ public sealed class MainWindow : Window
             $"[ArcadeHub] Controller selection: " +
             ControllerSidebarPages[_controllerSidebarIndex]);
 
-        RebuildShell();
+        UpdateControllerSidebarHighlight();
     }
 
 
@@ -276,6 +310,7 @@ public sealed class MainWindow : Window
         Background = BackgroundBrush;
         RefreshData();
         ShowProfileSelection();
+
     }
 
     private static SolidColorBrush Brush(string color) => new(Color.Parse(color));
@@ -1205,6 +1240,7 @@ public sealed class MainWindow : Window
         Grid.SetColumnSpan(backgroundTexture, 2);
         root.Children.Add(backgroundTexture);
 
+        _controllerSidebarButtons.Clear();
         var sidebar = BuildSidebar();
         root.Children.Add(sidebar);
 
@@ -1387,20 +1423,15 @@ public sealed class MainWindow : Window
         string tooltip,
         string page)
     {
-        var selected = _currentPage == page;
-
-        // Keep the active library section highlighted
-        // while viewing a game's details.
-        if (_currentPage == "Details" &&
-            page == _detailsReturnPage)
-        {
-            selected = true;
-        }
+        bool isActivePage = _currentPage == page ||
+            (_currentPage == "Details" && page == _detailsReturnPage);
 
         var button = MakeButton(
             symbol,
-            selected ? Brush(ThemeColor("#245C3B", "#244A7B", "#713044", "#59377C")) : Brushes.Transparent,
-            selected ? MainTextBrush : MutedBrush);
+            isActivePage
+                ? Brush(ThemeColor("#245C3B", "#244A7B", "#713044", "#59377C"))
+                : Brushes.Transparent,
+            isActivePage ? MainTextBrush : MutedBrush);
 
         // CENTERED CONSOLE NAVIGATION BUTTON
 button.Width = 48;
@@ -1427,13 +1458,11 @@ button.VerticalContentAlignment =
 
         ToolTip.SetTip(button, tooltip);
 
-        // Highlight the sidebar item selected by the controller.
-        if (_activeProfile is not null &&
-            ControllerSidebarPages[_controllerSidebarIndex] == page)
-        {
-            button.BorderBrush = AccentBrush;
-            button.BorderThickness = new Thickness(2);
-        }
+        // Controller outline is managed by UpdateControllerSidebarHighlight().
+        button.BorderBrush = Brushes.Transparent;
+        button.BorderThickness = new Thickness(0);
+
+        _controllerSidebarButtons[page] = button;
 
         button.Click += (_, _) => Navigate(page);
 
@@ -2414,7 +2443,11 @@ private async Task DownloadGameCoverAsync(Game game)
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                RenderCurrentPage();
+                // Refresh artwork only on pages displaying game cards.
+                if (_currentPage == "Library")
+                    RenderGameCards(false, _gameCountText);
+                else if (_currentPage == "Favorites")
+                    RenderGameCards(true, _gameCountText);
             });
         }
     }

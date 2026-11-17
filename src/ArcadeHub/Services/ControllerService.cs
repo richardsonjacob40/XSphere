@@ -124,6 +124,18 @@ public sealed class ControllerService : IDisposable
             SDL_free(ids);
         }
     }
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool SDL_GamepadConnected(IntPtr gamepad);
+
+    public bool IsControllerConnected()
+    {
+        if (_gamepad == IntPtr.Zero)
+            return false;
+
+        SDL_UpdateGamepads();
+        return SDL_GamepadConnected(_gamepad);
+    }
 
     public void UpdateInput()
     {

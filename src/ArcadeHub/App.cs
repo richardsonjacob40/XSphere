@@ -4,12 +4,15 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 using ArcadeHub.Services;
+using Avalonia.Threading;
 
 namespace ArcadeHub;
 
 public sealed class App : Application
 {
     private ControllerService? _controllerService;
+    private DispatcherTimer? _controllerTimer;
+    private bool? _lastControllerConnected;
 
     public override void Initialize()
     {
@@ -52,8 +55,47 @@ public sealed class App : Application
                 _controllerService = null;
             }
 
+            if (_controllerService != null)
+            {
+                _controllerTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(500)
+                };
+
+                _controllerTimer.Tick += (_, _) =>
+                {
+                    if (_controllerService == null)
+                        return;
+
+                    try
+                    {
+                        bool connected =
+                            _controllerService.RefreshControllerConnection();
+
+                        if (connected != _lastControllerConnected)
+                        {
+                            Console.WriteLine(
+                                $"[ArcadeHub] Controller connected: {connected}");
+
+                            _lastControllerConnected = connected;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(
+                            $"[ArcadeHub] Controller monitoring stopped: {ex.Message}");
+
+                        _controllerTimer?.Stop();
+                    }
+                };
+
+                _controllerTimer.Start();
+            }
+
             desktop.Exit += (_, _) =>
             {
+                _controllerTimer?.Stop();
+                _controllerTimer = null;
                 _controllerService?.Dispose();
                 _controllerService = null;
             };

@@ -140,6 +140,30 @@ private static extern void SDL_PumpEvents();
         return SDL_GamepadConnected(_gamepad);
     }
 
+    public bool RefreshControllerConnection()
+    {
+    if (!_initialized)
+        return false;
+
+    // Process pending USB/Bluetooth device events.
+    SDL_PumpEvents();
+
+    // Keep using the current controller if it remains connected.
+    if (_gamepad != IntPtr.Zero)
+    {
+        SDL_UpdateGamepads();
+
+        if (SDL_GamepadConnected(_gamepad))
+            return true;
+
+        // Release a disconnected controller.
+        CloseController();
+    }
+
+    // Attempt to open the first available controller.
+        return OpenController();
+    }
+
     public void UpdateInput()
     {
         if (_gamepad != IntPtr.Zero)

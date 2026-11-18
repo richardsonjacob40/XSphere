@@ -169,6 +169,7 @@ public sealed class MainWindow : Window
     private ArcadeHub.Services.ArcadeBackground?
         FindBackgroundTexture() => _backgroundTexture;
 
+    private readonly ControllerFocusManager _controllerFocus = new();
     private Grid _pageHost = new();
     private TextBlock _statusText = new();
     private TextBlock _pageTitle = new();
@@ -218,6 +219,85 @@ public sealed class MainWindow : Window
             entry.Value.BorderThickness = selected
                 ? new Thickness(2)
                 : new Thickness(0);
+        }
+    }
+
+    private bool _controllerPageFocused;
+
+    public void ControllerHandleInput(string input)
+    {
+        Console.WriteLine(
+            $"[Controller] Input={input}, Page={_currentPage}, " +
+            $"FocusCount={_controllerFocus.Count}, PageFocused={_controllerPageFocused}");
+
+        if (_activeProfile is null)
+            return;
+
+        switch (input)
+        {
+            case "DpadUp":
+            case "YNegative":
+                if (_controllerPageFocused)
+                    _controllerFocus.MoveDirectional(0, -1);
+                else
+                    ControllerMoveSidebarSelection(-1);
+                break;
+
+            case "DpadDown":
+            case "YPositive":
+                if (_controllerPageFocused)
+                    _controllerFocus.MoveDirectional(0, 1);
+                else
+                    ControllerMoveSidebarSelection(1);
+                break;
+
+            case "DpadRight":
+            case "XPositive":
+                if (!_controllerPageFocused && _controllerFocus.Count > 0)
+                {
+                    _controllerPageFocused = true;
+                    _controllerFocus.SelectFirst();
+                }
+                else if (_controllerPageFocused)
+                {
+                    _controllerFocus.MoveDirectional(1, 0);
+                }
+                break;
+
+            case "DpadLeft":
+            case "XNegative":
+                if (_controllerPageFocused &&
+                    !_controllerFocus.MoveDirectional(-1, 0))
+                {
+                    _controllerPageFocused = false;
+                    _controllerFocus.ClearSelection();
+                    UpdateControllerSidebarHighlight();
+                }
+                break;
+
+            case "A":
+                if (_controllerPageFocused)
+                    _controllerFocus.Activate();
+                else
+                    ControllerActivateSidebarSelection();
+                break;
+
+            case "B":
+                if (_currentPage == "Details")
+                    Navigate(_detailsReturnPage);
+                else
+                    Navigate("Home");
+                break;
+
+            case "LB":
+            case "RB":
+                ControllerMoveSidebarSelection(input == "LB" ? -1 : 1);
+                ControllerActivateSidebarSelection();
+                break;
+
+            case "Start":
+                TogglePresentationMode();
+                break;
         }
     }
 
@@ -1240,6 +1320,7 @@ public sealed class MainWindow : Window
         Grid.SetColumnSpan(backgroundTexture, 2);
         root.Children.Add(backgroundTexture);
 
+        _controllerFocus.Clear();
         _controllerSidebarButtons.Clear();
         var sidebar = BuildSidebar();
         root.Children.Add(sidebar);
@@ -2424,6 +2505,8 @@ button.VerticalContentAlignment =
             border.BorderBrush = Brush(ThemeColor("#344A3B", "#354A69", "#59313E", "#49345F"));
             border.BorderThickness = new Thickness(1);
         };
+
+        _controllerFocus.Register(border, () => OpenGameDetails(game));
 
         return border;
     }

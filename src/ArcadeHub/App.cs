@@ -32,30 +32,29 @@ public sealed class App : Application
             _controllerBridgeService = new ControllerBridgeService();
             _controllerBridgeService.Start();
 
-            uint previousBridgeButtons = 0;
-            uint previousBridgePov = 65535;
+            // Unified Windows-to-WSL controller input handler.
+            var controllerInputHandler = new ControllerInputHandler();
 
-            _controllerBridgeService.ButtonsReceived += (buttons, pov) =>
+            controllerInputHandler.InputPressed += input =>
+            {
+                if (desktop.MainWindow is MainWindow window)
+                    window.ControllerHandleInput(input);
+            };
+
+            _controllerBridgeService.ControllerStateReceived += values =>
             {
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (desktop.MainWindow is MainWindow window)
+                    try
                     {
-                        if (pov == 0 && previousBridgePov != 0)
-                            window.ControllerMoveSidebarSelection(-1);
-
-                        if (pov == 18000 && previousBridgePov != 18000)
-                            window.ControllerMoveSidebarSelection(1);
-
-                        bool aPressed = (buttons & 1u) != 0;
-                        bool wasPressed = (previousBridgeButtons & 1u) != 0;
-
-                        if (aPressed && !wasPressed)
-                            window.ControllerActivateSidebarSelection();
+                        var state = ControllerInputState.FromValues(values);
+                        controllerInputHandler.Process(state);
                     }
-
-                    previousBridgeButtons = buttons;
-                    previousBridgePov = pov;
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(
+                            $"[ArcadeHub] Controller input error: {ex.Message}");
+                    }
                 });
             };
 

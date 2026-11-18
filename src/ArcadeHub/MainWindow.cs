@@ -501,6 +501,74 @@ public sealed class MainWindow : Window
         RefreshData();
         ShowProfileSelection();
 
+        Opened += async (_, _) =>
+        {
+            await ShowXSphereStartupAsync();
+        };
+
+    }
+
+
+    private async Task ShowXSphereStartupAsync()
+    {
+        var imagePath = System.IO.Path.Combine(
+            AppContext.BaseDirectory,
+            "Assets", "Startup", "XSphere.png");
+
+        if (!System.IO.File.Exists(imagePath))
+        {
+            Console.WriteLine("[XSphere] Startup artwork not found.");
+            return;
+        }
+
+        try
+        {
+            var splash = new Image
+            {
+                Source = new Bitmap(imagePath),
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                Opacity = 0
+            };
+
+            var overlay = new Border
+            {
+                Background = Brush("#090D18"),
+                Child = splash
+            };
+
+            var originalContent = Content;
+
+            Content = overlay;
+
+            // Fade in over 700 ms.
+            for (int i = 0; i <= 20; i++)
+            {
+                splash.Opacity = i / 20.0;
+                await Task.Delay(35);
+            }
+
+            // Hold the completed XSphere logo.
+            await Task.Delay(1300);
+
+            // Fade out over 700 ms.
+            for (int i = 20; i >= 0; i--)
+            {
+                splash.Opacity = i / 20.0;
+                await Task.Delay(35);
+            }
+
+            Content = originalContent;
+
+            Console.WriteLine("[XSphere] Startup animation complete.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"[XSphere] Startup animation error: {ex.Message}");
+            ShowProfileSelection();
+        }
     }
 
     private static SolidColorBrush Brush(string color) => new(Color.Parse(color));
@@ -830,12 +898,12 @@ public sealed class MainWindow : Window
     {
         _activeProfile = null;
         // Exclusive Titanium palette for Profile Selection.
-        var titaniumPanel = Brush("#343E4B");
-        var titaniumCard = Brush("#485463");
-        var titaniumText = Brush("#E8EDF4");
-        var titaniumMuted = Brush("#A7B4C2");
-        var titaniumAccent = Brush("#B8D9F2");
-        var titaniumBackground = Brush("#171D26");
+        var titaniumPanel = Brush("#17233F");
+        var titaniumCard = Brush("#24365C");
+        var titaniumText = Brush("#F2F5FF");
+        var titaniumMuted = Brush("#A6B5D8");
+        var titaniumAccent = Brush("#80AFFF");
+        var titaniumBackground = Brush("#090D18");
 
 
         var page = new StackPanel
@@ -1114,17 +1182,17 @@ public sealed class MainWindow : Window
 
             var profileVisual = new StackPanel
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 16,
-                VerticalAlignment = VerticalAlignment.Center
+                Orientation = Orientation.Vertical,
+                Spacing = 10,
+                HorizontalAlignment = HorizontalAlignment.Center
             };
             profileVisual.Children.Add(
-                BuildTitaniumAvatar(profile.Avatar, 90));
+                BuildAvatarVisual(profile.Avatar, 112, titaniumAccent));
 
             var profileIdentity = new StackPanel
             {
                 Spacing = 6,
-                VerticalAlignment = VerticalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Center
             };
 
             profileIdentity.Children.Add(
@@ -1152,11 +1220,14 @@ public sealed class MainWindow : Window
             profileVisual.Children.Add(profileIdentity);
             select.Content = profileVisual;
 
-            select.Width = 290;
-            select.Height = 125;
-            select.FontSize = 20;
-            select.BorderBrush = titaniumMuted;
-            select.BorderThickness = new Thickness(1);
+            select.Width = 154;
+            select.Height = 170;
+            select.Padding = new Thickness(8);
+            select.FontSize = 18;
+            select.Background = Brushes.Transparent;
+            select.BorderBrush = Brushes.Transparent;
+            select.BorderThickness = new Thickness(0);
+            select.CornerRadius = new CornerRadius(24);
 
             select.Click += async (_, _) =>
             {
@@ -1266,7 +1337,6 @@ public sealed class MainWindow : Window
             }
 
             profileCard.Children.Add(select);
-            profileCard.Children.Add(edit);
             profileButtons.Children.Add(profileCard);
         }
 

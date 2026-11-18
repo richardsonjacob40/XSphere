@@ -15,7 +15,7 @@ public sealed class ControllerBridgeService : IDisposable
     private CancellationTokenSource? _cancellation;
     private Task? _serverTask;
 
-    public event Action<uint, uint>? ButtonsReceived;
+    public event Action<uint[]>? ControllerStateReceived;
 
     public void Start()
     {
@@ -50,11 +50,22 @@ public sealed class ControllerBridgeService : IDisposable
 
                     var parts = line.Split(',');
 
-                    if (parts.Length == 2 &&
-                        uint.TryParse(parts[0], out var buttons) &&
-                        uint.TryParse(parts[1], out var pov))
+                    if (parts.Length == 8)
                     {
-                        ButtonsReceived?.Invoke(buttons, pov);
+                        var values = new uint[8];
+                        bool valid = true;
+
+                        for (int i = 0; i < values.Length; i++)
+                        {
+                            if (!uint.TryParse(parts[i], out values[i]))
+                            {
+                                valid = false;
+                                break;
+                            }
+                        }
+
+                        if (valid)
+                            ControllerStateReceived?.Invoke(values);
                     }
                 }
             }

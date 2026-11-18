@@ -1,5 +1,7 @@
 
 using System;
+using System.Diagnostics;
+using System.IO;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
@@ -11,6 +13,7 @@ namespace ArcadeHub;
 
 public sealed class App : Application
 {
+    private Process? _windowsBridgeProcess;
     private ControllerService? _controllerService;
     private ControllerBridgeService? _controllerBridgeService;
     private DispatcherTimer? _controllerTimer;
@@ -18,6 +21,63 @@ public sealed class App : Application
     private bool _previousDpadDown;
     private bool _previousDpadUp;
     private bool _previousButtonA;
+
+    private void StartWindowsControllerBridge()
+    {
+        if (!OperatingSystem.IsLinux())
+            return;
+
+        const string bridgePath =
+            @"E:\ArcadeHub Project\ControllerBridge\ControllerBridge.ps1";
+
+        try
+        {
+            var start = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            start.ArgumentList.Add("-NoProfile");
+            start.ArgumentList.Add("-ExecutionPolicy");
+            start.ArgumentList.Add("Bypass");
+            start.ArgumentList.Add("-File");
+            start.ArgumentList.Add(bridgePath);
+
+            _windowsBridgeProcess = Process.Start(start);
+
+            Console.WriteLine(
+                "[ArcadeHub] Windows controller bridge launch requested");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"[ArcadeHub] Could not start Windows controller bridge: {ex.Message}");
+        }
+    }
+
+    private void StopWindowsControllerBridge()
+    {
+        try
+        {
+            if (_windowsBridgeProcess is { HasExited: false } process)
+            {
+                process.Kill();
+                process.WaitForExit(2000);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"[ArcadeHub] Could not stop Windows controller bridge: {ex.Message}");
+        }
+        finally
+        {
+            _windowsBridgeProcess?.Dispose();
+            _windowsBridgeProcess = null;
+        }
+    }
 
     public override void Initialize()
     {
@@ -31,6 +91,7 @@ public sealed class App : Application
         {
             _controllerBridgeService = new ControllerBridgeService();
             _controllerBridgeService.Start();
+            StartWindowsControllerBridge();
 
             // Unified Windows-to-WSL controller input handler.
             var controllerInputHandler = new ControllerInputHandler();
@@ -171,6 +232,9 @@ public sealed class App : Application
                 _controllerTimer = null;
                 _controllerService?.Dispose();
                 _controllerService = null;
+                StopWindowsControllerBridge();
+                _controllerBridgeService?.Dispose();
+                _controllerBridgeService = null;
             };
 
             desktop.MainWindow = new MainWindow();

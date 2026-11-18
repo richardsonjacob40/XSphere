@@ -12,6 +12,7 @@ namespace ArcadeHub;
 public sealed class App : Application
 {
     private ControllerService? _controllerService;
+    private ControllerBridgeService? _controllerBridgeService;
     private DispatcherTimer? _controllerTimer;
     private bool? _lastControllerConnected;
     private bool _previousDpadDown;
@@ -28,6 +29,36 @@ public sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            _controllerBridgeService = new ControllerBridgeService();
+            _controllerBridgeService.Start();
+
+            uint previousBridgeButtons = 0;
+            uint previousBridgePov = 65535;
+
+            _controllerBridgeService.ButtonsReceived += (buttons, pov) =>
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (desktop.MainWindow is MainWindow window)
+                    {
+                        if (pov == 0 && previousBridgePov != 0)
+                            window.ControllerMoveSidebarSelection(-1);
+
+                        if (pov == 18000 && previousBridgePov != 18000)
+                            window.ControllerMoveSidebarSelection(1);
+
+                        bool aPressed = (buttons & 1u) != 0;
+                        bool wasPressed = (previousBridgeButtons & 1u) != 0;
+
+                        if (aPressed && !wasPressed)
+                            window.ControllerActivateSidebarSelection();
+                    }
+
+                    previousBridgeButtons = buttons;
+                    previousBridgePov = pov;
+                });
+            };
+
             _controllerService = new ControllerService();
 
             try

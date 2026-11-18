@@ -197,7 +197,8 @@ public sealed class MainWindow : Window
         "Emulators",
         "Folders",
         "Saves",
-        "Settings"
+        "Settings",
+        "SwitchProfile"
     };
 
     private int _controllerSidebarIndex = 0;
@@ -213,7 +214,7 @@ public sealed class MainWindow : Window
                 ControllerSidebarPages[_controllerSidebarIndex] == entry.Key;
 
             entry.Value.BorderBrush = selected
-                ? AccentBrush
+                ? Brushes.LimeGreen
                 : Brushes.Transparent;
 
             entry.Value.BorderThickness = selected
@@ -222,6 +223,9 @@ public sealed class MainWindow : Window
         }
     }
 
+    private bool _controllerSortPreview;
+    private string? _controllerSortOriginal;
+    private bool _controllerProfileScreen;
     private bool _controllerPageFocused;
 
     public void ControllerHandleInput(string input)
@@ -230,15 +234,100 @@ public sealed class MainWindow : Window
             $"[Controller] Input={input}, Page={_currentPage}, " +
             $"FocusCount={_controllerFocus.Count}, PageFocused={_controllerPageFocused}");
 
-        if (_activeProfile is null)
+        if (_activeProfile is null && !_controllerProfileScreen)
             return;
+
+        if (_controllerProfileScreen)
+        {
+            switch (input)
+            {
+                case "DpadUp":
+                case "YNegative":
+                    _controllerFocus.MoveDirectional(0, -1);
+                    break;
+
+                case "DpadDown":
+                case "YPositive":
+                    _controllerFocus.MoveDirectional(0, 1);
+                    break;
+
+                case "DpadLeft":
+                case "XNegative":
+                    _controllerFocus.MoveDirectional(-1, 0);
+                    break;
+
+                case "DpadRight":
+                case "XPositive":
+                    _controllerFocus.MoveDirectional(1, 0);
+                    break;
+
+                case "A":
+                    _controllerFocus.Activate();
+                    break;
+            }
+
+            return;
+        }
+
+        // Give an open dropdown priority over page navigation.
+        var activeComboBox = _controllerFocus.SelectedComboBox;
+
+        if (_controllerPageFocused &&
+            activeComboBox is not null &&
+            activeComboBox.IsDropDownOpen)
+        {
+            switch (input)
+            {
+                case "DpadUp":
+                case "YNegative":
+                    if (activeComboBox.SelectedIndex > 0)
+                        activeComboBox.SelectedIndex--;
+                    return;
+
+                case "DpadDown":
+                case "YPositive":
+                    if (activeComboBox.SelectedIndex <
+                        activeComboBox.ItemCount - 1)
+                        activeComboBox.SelectedIndex++;
+                    return;
+
+                case "A":
+                    if (activeComboBox.SelectedItem is string confirmedSort)
+                    {
+                        _gameSort = confirmedSort;
+                        _controllerSortPreview = false;
+                        activeComboBox.IsDropDownOpen = false;
+                        RenderGameCards(
+                            _currentPage == "Favorites",
+                            _gameCountText);
+                    }
+                    return;
+
+                case "B":
+                    if (_controllerSortOriginal is not null)
+                        activeComboBox.SelectedItem =
+                            _controllerSortOriginal;
+
+                    _controllerSortPreview = false;
+                    activeComboBox.IsDropDownOpen = false;
+                    return;
+
+                default:
+                    return;
+            }
+        }
 
         switch (input)
         {
             case "DpadUp":
             case "YNegative":
                 if (_controllerPageFocused)
-                    _controllerFocus.MoveDirectional(0, -1);
+                {
+                    if (_currentPage == "Emulators")
+                        _controllerFocus.MoveEmulatorNavigation(0, -1);
+                    else
+                        _controllerFocus.MoveDirectional(0, -1);
+                }
                 else
                     ControllerMoveSidebarSelection(-1);
                 break;
@@ -246,7 +335,12 @@ public sealed class MainWindow : Window
             case "DpadDown":
             case "YPositive":
                 if (_controllerPageFocused)
-                    _controllerFocus.MoveDirectional(0, 1);
+                {
+                    if (_currentPage == "Emulators")
+                        _controllerFocus.MoveEmulatorNavigation(0, 1);
+                    else
+                        _controllerFocus.MoveDirectional(0, 1);
+                }
                 else
                     ControllerMoveSidebarSelection(1);
                 break;
@@ -260,14 +354,19 @@ public sealed class MainWindow : Window
                 }
                 else if (_controllerPageFocused)
                 {
-                    _controllerFocus.MoveDirectional(1, 0);
+                    if (_currentPage == "Emulators")
+                        _controllerFocus.MoveEmulatorNavigation(1, 0);
+                    else
+                        _controllerFocus.MoveDirectional(1, 0);
                 }
                 break;
 
             case "DpadLeft":
             case "XNegative":
                 if (_controllerPageFocused &&
-                    !_controllerFocus.MoveDirectional(-1, 0))
+                    !(_currentPage == "Emulators"
+                        ? _controllerFocus.MoveEmulatorNavigation(-1, 0)
+                        : _controllerFocus.MoveDirectional(-1, 0)))
                 {
                     _controllerPageFocused = false;
                     _controllerFocus.ClearSelection();
@@ -285,6 +384,11 @@ public sealed class MainWindow : Window
             case "B":
                 if (_currentPage == "Details")
                     Navigate(_detailsReturnPage);
+                else if (_currentPage == "EmulatorEditor")
+                {
+                    _editingEmulatorProfileId = null;
+                    Navigate("Emulators");
+                }
                 else
                     Navigate("Home");
                 break;
@@ -311,6 +415,12 @@ public sealed class MainWindow : Window
 
         Console.WriteLine(
             $"[ArcadeHub] Controller opening page: {page}");
+
+        if (page == "SwitchProfile")
+        {
+            ShowProfileSelection();
+            return;
+        }
 
         Navigate(page);
     }
@@ -703,6 +813,16 @@ public sealed class MainWindow : Window
         background.Children.Add(page);
 
         Content = BuildWindowFrame(background, titanium: true);
+
+        _controllerProfileScreen = true;
+        _controllerPageFocused = false;
+        _controllerFocus.Clear();
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _controllerFocus.RegisterButtons(page);
+            _controllerFocus.SelectFirst();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     private void ShowProfileSelection(
@@ -1218,6 +1338,16 @@ public sealed class MainWindow : Window
 
         background.Children.Add(scroll);
         Content = BuildWindowFrame(background, titanium: true);
+
+        _controllerProfileScreen = true;
+        _controllerPageFocused = false;
+        _controllerFocus.Clear();
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _controllerFocus.RegisterButtons(page);
+            _controllerFocus.SelectFirst();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     private static Control BuildAvatarVisual(string avatar, double size, IBrush? ringBrush = null)
@@ -1295,6 +1425,8 @@ public sealed class MainWindow : Window
 
     private void RebuildShell()
     {
+        _controllerProfileScreen = false;
+
         var root = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("76,*"),
@@ -1451,6 +1583,7 @@ public sealed class MainWindow : Window
         switchProfile.Content = profileIcon;
 
         switchProfile.Click += (_, _) => ShowProfileSelection();
+        _controllerSidebarButtons["SwitchProfile"] = switchProfile;
 
 
 
@@ -1645,6 +1778,7 @@ button.VerticalContentAlignment =
             "Details" => _selectedGame?.Title ?? "Game details",
             "Favorites" => "Your favorites",
             "Emulators" => "Emulator manager",
+            "EmulatorEditor" => "Emulator profile editor",
             "Folders" => "ROM folders",
             _ => "Your game library"
         };
@@ -1655,6 +1789,7 @@ button.VerticalContentAlignment =
             "Details" => BuildGameDetailsPage(),
             "Favorites" => BuildLibraryPage(favoritesOnly: true),
             "Emulators" => BuildEmulatorsPage(),
+            "EmulatorEditor" => BuildEmulatorEditorPage(),
             "Folders" => BuildFoldersPage(),
             "Saves" => BuildSavesPage(),
             "Settings" => BuildSettingsPage(),
@@ -1703,6 +1838,9 @@ button.VerticalContentAlignment =
             Navigate(_detailsReturnPage);
 
         page.Children.Add(back);
+        _controllerFocus.Register(back, () =>
+            back.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(
+                Button.ClickEvent)));
 
         // Main details layout
         var layout = new Grid
@@ -1806,6 +1944,9 @@ button.VerticalContentAlignment =
         play.Click += (_, _) => LaunchGame(game);
 
         information.Children.Add(play);
+        _controllerFocus.Register(play, () =>
+            play.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(
+                Button.ClickEvent)));
 
         var favorite = MakeButton(
             game.IsFavorite
@@ -1831,6 +1972,9 @@ button.VerticalContentAlignment =
         };
 
         information.Children.Add(favorite);
+        _controllerFocus.Register(favorite, () =>
+            favorite.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(
+                Button.ClickEvent)));
 
         Grid.SetColumn(information, 1);
         layout.Children.Add(information);
@@ -2261,15 +2405,20 @@ button.VerticalContentAlignment =
         };
         _searchBox.TextChanged += (_, _) => RenderGameCards(favoritesOnly, _gameCountText);
         toolbar.Children.Add(_searchBox);
+        _controllerFocus.Register(_searchBox, () => _searchBox.Focus());
 
         if (!favoritesOnly)
         {
             var addFolder = MakeButton("+ Add ROM Folder", CardBrush, MainTextBrush);
             addFolder.Click += async (_, _) => await AddRomFolderAsync();
             toolbar.Children.Add(addFolder);
+            _controllerFocus.Register(addFolder, () =>
+                addFolder.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)));
             var scan = MakeButton("Scan Library", AccentBrush, BackgroundBrush);
             scan.Click += async (_, _) => await ScanAllFoldersAsync();
             toolbar.Children.Add(scan);
+            _controllerFocus.Register(scan, () =>
+                scan.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)));
         }
         
         // Sort games without changing the selected console.
@@ -2289,6 +2438,9 @@ button.VerticalContentAlignment =
 
         sortBox.SelectionChanged += (_, _) =>
         {
+            if (_controllerSortPreview)
+                return;
+
             if (sortBox.SelectedItem is string selection)
             {
                 _gameSort = selection;
@@ -2297,6 +2449,20 @@ button.VerticalContentAlignment =
         };
 
         toolbar.Children.Add(sortBox);
+        _controllerFocus.Register(sortBox, () =>
+        {
+            if (!sortBox.IsDropDownOpen)
+            {
+                _controllerSortOriginal = _gameSort;
+                _controllerSortPreview = true;
+                sortBox.IsDropDownOpen = true;
+            }
+            else
+            {
+                sortBox.IsDropDownOpen = false;
+                _controllerSortPreview = false;
+            }
+        });
 
         page.Children.Add(toolbar);
 
@@ -2336,6 +2502,8 @@ button.VerticalContentAlignment =
                 };
 
                 consoleTabs.Children.Add(tab);
+                _controllerFocus.Register(tab, () =>
+                    tab.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)));
             }
 
             page.Children.Add(
@@ -2356,6 +2524,13 @@ button.VerticalContentAlignment =
     private void RenderGameCards(bool favoritesOnly, TextBlock? countLabel = null)
     {
         if (_gameCards is null) return;
+        // Remove old cards from controller navigation before rebuilding.
+        foreach (var oldCard in _gameCards.Children)
+        {
+            if (oldCard is Control control)
+                _controllerFocus.Unregister(control);
+        }
+
         _gameCards.Children.Clear();
         var query = _searchBox?.Text?.Trim() ?? "";
         var visible = _games
@@ -2555,95 +2730,29 @@ private async Task DownloadGameCoverAsync(Game game)
         }
         page.Children.Add(Text("Connect the emulators already on your computer. Each profile is linked to a system.", 13, MutedBrush));
 
-        var form = new Border { Background = PanelBrush, CornerRadius = new CornerRadius(20), Padding = new Thickness(18) };
-        var formStack = new StackPanel { Spacing = 10 };
-        string? editingEmulatorId = null;
-        var formTitle = Text("Add an emulator profile", 17, MainTextBrush, true);
-        formStack.Children.Add(formTitle);
-
-        var nameBox = NewTextBox("Emulator name (e.g. Dolphin)");
-        var systemBox = NewTextBox("System (e.g. GameCube) or Any / Default");
-        var pathBox = NewTextBox("Path to emulator executable");
-        var browseButton = MakeButton("Browse...", CardBrush, MainTextBrush);
-        browseButton.Click += async (_, _) =>
-        {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Choose emulator executable",
-                AllowMultiple = false
-            });
-            if (files.Count > 0) pathBox.Text = files[0].Path.LocalPath;
-        };
-
-        var pathRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        pathRow.Children.Add(pathBox);
-        Grid.SetColumn(browseButton, 1);
-        pathRow.Children.Add(browseButton);
-        var argsBox = NewTextBox("Launch arguments (default: \"{rom}\")");
-        argsBox.Text = "\"{rom}\"";
-        var help = Text("Use {rom} where the game file path should go. Example: --fullscreen \"{rom}\". If omitted, the ROM path is added at the end.", 11, MutedBrush, wrapping: TextWrapping.Wrap);
-
-        var saveButton = MakeButton("Save Emulator Profile", AccentBrush, BackgroundBrush);
-        saveButton.HorizontalAlignment = HorizontalAlignment.Left;
-        saveButton.Click += (_, _) =>
-        {
-            var name = nameBox.Text?.Trim() ?? "";
-            var system = systemBox.Text?.Trim() ?? "";
-            var executable = pathBox.Text?.Trim() ?? "";
-            if (name.Length == 0 || system.Length == 0 || executable.Length == 0)
-            {
-                SetStatus("Enter a name, system, and executable path.");
-                return;
-            }
-
-            try
-            {
-                _database.SaveEmulator(new EmulatorProfile
-                {
-                    Id = editingEmulatorId ?? Guid.NewGuid().ToString("N"),
-                    Name = name,
-                    System = system,
-                    ExecutablePath = executable,
-                    ArgumentsTemplate = argsBox.Text?.Trim() ?? "\"{rom}\""
-                }, _activeProfile?.Id);
-
-                RefreshData();
-                SetStatus($"Saved emulator profile: {name}");
-                RenderCurrentPage();
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                SetStatus(ex.Message);
-                RenderCurrentPage();
-            }
-        };
-
-        formStack.Children.Add(nameBox);
-        formStack.Children.Add(systemBox);
-        formStack.Children.Add(pathRow);
-        formStack.Children.Add(argsBox);
-        formStack.Children.Add(help);
-        formStack.Children.Add(saveButton);
-
-        var cancelEditButton = MakeButton("Cancel Editing", CardBrush, MainTextBrush);
-        cancelEditButton.IsVisible = false;
-        cancelEditButton.HorizontalAlignment = HorizontalAlignment.Left;
-        cancelEditButton.Click += (_, _) =>
-        {
-            editingEmulatorId = null;
-            nameBox.Text = "";
-            systemBox.Text = "";
-            pathBox.Text = "";
-            argsBox.Text = "\"{rom}\"";
-            formTitle.Text = "Add an emulator profile";
-            saveButton.Content = "Save Emulator Profile";
-            cancelEditButton.IsVisible = false;
-        };
-        formStack.Children.Add(cancelEditButton);
-
-        form.Child = formStack;
         if (canManageEmulators)
-            page.Children.Add(form);
+        {
+            var createButton = MakeButton(
+                "+ Create Emulator Profile",
+                AccentBrush,
+                BackgroundBrush);
+
+            createButton.HorizontalAlignment =
+                HorizontalAlignment.Left;
+
+            createButton.Click += (_, _) =>
+            {
+                _editingEmulatorProfileId = null;
+                Navigate("EmulatorEditor");
+            };
+
+            page.Children.Add(createButton);
+
+            _controllerFocus.Register(createButton, () =>
+                createButton.RaiseEvent(
+                    new Avalonia.Interactivity.RoutedEventArgs(
+                        Button.ClickEvent)));
+        }
 
         page.Children.Add(Text($"Configured emulators ({_emulators.Count})", 17, MainTextBrush, true));
         if (_emulators.Count == 0)
@@ -2671,19 +2780,15 @@ private async Task DownloadGameCoverAsync(Game game)
             var edit = MakeButton("Edit", AccentBrush, BackgroundBrush);
             edit.Click += (_, _) =>
             {
-                editingEmulatorId = emulator.Id;
-                nameBox.Text = emulator.Name;
-                systemBox.Text = emulator.System;
-                pathBox.Text = emulator.ExecutablePath;
-                argsBox.Text = emulator.ArgumentsTemplate;
-
-                formTitle.Text = "Edit emulator profile";
-                saveButton.Content = "Save Changes";
-                cancelEditButton.IsVisible = true;
-
-                SetStatus("Editing emulator: " + emulator.Name);
+                _editingEmulatorProfileId = emulator.Id;
+                Navigate("EmulatorEditor");
             };
             actions.Children.Add(edit);
+            if (canManageEmulators)
+                _controllerFocus.Register(edit, () =>
+                    edit.RaiseEvent(
+                        new Avalonia.Interactivity.RoutedEventArgs(
+                            Button.ClickEvent)));
 
             var remove = MakeButton("Remove", CardBrush, MutedBrush);
             remove.Margin = new Thickness(8);
@@ -2706,6 +2811,11 @@ private async Task DownloadGameCoverAsync(Game game)
                 }
             };
             actions.Children.Add(remove);
+            if (canManageEmulators)
+                _controllerFocus.Register(remove, () =>
+                    remove.RaiseEvent(
+                        new Avalonia.Interactivity.RoutedEventArgs(
+                            Button.ClickEvent)));
             Grid.SetColumn(actions, 1);
             if (canManageEmulators)
                 row.Children.Add(actions);
@@ -2721,10 +2831,172 @@ private async Task DownloadGameCoverAsync(Game game)
             button.Margin = new Thickness(0, 0, 8, 8);
             button.Click += (_, _) => OpenWebsite(item.Url);
             downloads.Children.Add(button);
+            _controllerFocus.Register(button, () =>
+                button.RaiseEvent(
+                    new Avalonia.Interactivity.RoutedEventArgs(
+                        Button.ClickEvent)));
         }
         page.Children.Add(downloads);
 
         return new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    }
+
+
+    private string? _editingEmulatorProfileId;
+
+    private Control BuildEmulatorEditorPage()
+    {
+        var page = new StackPanel { Spacing = 16 };
+
+        var canManage = _database.CanProfileManageEmulators(
+            _activeProfile?.Id);
+
+        if (!canManage)
+        {
+            page.Children.Add(Text(
+                "You do not have permission to manage emulators.",
+                15, MutedBrush));
+
+            return page;
+        }
+
+        var emulator = _emulators.FirstOrDefault(
+            item => item.Id == _editingEmulatorProfileId);
+
+        var editing = emulator is not null;
+
+        page.Children.Add(Text(
+            editing ? "Edit Emulator Profile" : "Create Emulator Profile",
+            24, MainTextBrush, true));
+
+        var nameBox = NewTextBox("Emulator name (e.g. Dolphin)");
+        var systemBox = NewTextBox("System (e.g. GameCube)");
+        var pathBox = NewTextBox("Path to emulator executable");
+        var argsBox = NewTextBox("Launch arguments");
+
+        nameBox.Text = emulator?.Name ?? "";
+        systemBox.Text = emulator?.System ?? "";
+        pathBox.Text = emulator?.ExecutablePath ?? "";
+        argsBox.Text = emulator?.ArgumentsTemplate ?? "\"{rom}\"";
+
+        var browse = MakeButton(
+            "Browse...", CardBrush, MainTextBrush);
+
+        browse.Click += async (_, _) =>
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "Choose emulator executable",
+                    AllowMultiple = false
+                });
+
+            if (files.Count > 0)
+                pathBox.Text = files[0].Path.LocalPath;
+        };
+
+        var pathRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto")
+        };
+
+        pathRow.Children.Add(pathBox);
+        Grid.SetColumn(browse, 1);
+        pathRow.Children.Add(browse);
+
+        page.Children.Add(nameBox);
+        page.Children.Add(systemBox);
+        page.Children.Add(pathRow);
+        page.Children.Add(argsBox);
+
+        page.Children.Add(Text(
+            "Use {rom} where the game file path should go.",
+            12, MutedBrush));
+
+        var save = MakeButton(
+            editing ? "Save Changes" : "Save Emulator Profile",
+            AccentBrush, BackgroundBrush);
+
+        save.HorizontalAlignment = HorizontalAlignment.Left;
+
+        save.Click += (_, _) =>
+        {
+            var name = nameBox.Text?.Trim() ?? "";
+            var system = systemBox.Text?.Trim() ?? "";
+            var executable = pathBox.Text?.Trim() ?? "";
+
+            if (name.Length == 0 ||
+                system.Length == 0 ||
+                executable.Length == 0)
+            {
+                SetStatus(
+                    "Enter a name, system, and executable path.");
+                return;
+            }
+
+            try
+            {
+                _database.SaveEmulator(
+                    new EmulatorProfile
+                    {
+                        Id = emulator?.Id ??
+                            Guid.NewGuid().ToString("N"),
+                        Name = name,
+                        System = system,
+                        ExecutablePath = executable,
+                        ArgumentsTemplate =
+                            argsBox.Text?.Trim() ?? "\"{rom}\""
+                    },
+                    _activeProfile?.Id);
+
+                RefreshData();
+                _editingEmulatorProfileId = null;
+
+                SetStatus("Saved emulator profile: " + name);
+                Navigate("Emulators");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                SetStatus(ex.Message);
+            }
+        };
+
+        var cancel = MakeButton(
+            "Cancel", CardBrush, MainTextBrush);
+
+        cancel.HorizontalAlignment = HorizontalAlignment.Left;
+
+        cancel.Click += (_, _) =>
+        {
+            _editingEmulatorProfileId = null;
+            Navigate("Emulators");
+        };
+
+        page.Children.Add(save);
+        page.Children.Add(cancel);
+
+        foreach (var field in new Control[]
+        {
+            nameBox, systemBox, pathBox, browse,
+            argsBox, save, cancel
+        })
+        {
+            if (field is Button button)
+                _controllerFocus.Register(button, () =>
+                    button.RaiseEvent(
+                        new Avalonia.Interactivity.RoutedEventArgs(
+                            Button.ClickEvent)));
+            else if (field is TextBox textBox)
+                _controllerFocus.Register(textBox, () =>
+                    textBox.Focus());
+        }
+
+        return new ScrollViewer
+        {
+            Content = page,
+            VerticalScrollBarVisibility =
+                ScrollBarVisibility.Auto
+        };
     }
 
 
@@ -4085,21 +4357,35 @@ private async Task DownloadGameCoverAsync(Game game)
                 return list;
             });
 
-            foreach (var game in discovered) _database.SaveGame(game);
+            foreach (var game in discovered)
+                _database.SaveGame(game);
+
             var removed = _database.RemoveInvalidGameEntries();
             RefreshData();
-            foreach (var game in discovered)
-    _database.SaveGame(game);
-
-
-RefreshData();
 
 SetStatus(
     $"Scan complete. Found {discovered.Count} file(s); " +
     $"removed {removed} invalid entries; " +
     $"{_games.Count} game(s) are in your library.");
 
+// Remember whether the controller was navigating the page.
+bool restorePageFocus = _controllerPageFocused;
+
 RenderCurrentPage();
+
+if (restorePageFocus)
+{
+    Avalonia.Threading.Dispatcher.UIThread.Post(
+        () =>
+        {
+            if (_currentPage is "Library" or "Favorites")
+            {
+                _controllerPageFocused = true;
+                _controllerFocus.SelectFirst();
+            }
+        },
+        Avalonia.Threading.DispatcherPriority.Loaded);
+}
         }
         catch (Exception ex)
         {

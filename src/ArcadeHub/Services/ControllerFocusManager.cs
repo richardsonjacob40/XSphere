@@ -18,6 +18,12 @@ public sealed class ControllerFocusManager
 
     public int Count => _items.Count;
 
+    public ComboBox? SelectedComboBox =>
+        _selectedIndex >= 0 &&
+        _selectedIndex < _items.Count
+            ? _items[_selectedIndex].Control as ComboBox
+            : null;
+
     public void Clear()
     {
         ClearSelection();
@@ -30,6 +36,39 @@ public sealed class ControllerFocusManager
             return;
 
         _items.Add(new FocusItem(control, activate));
+
+        string description = control switch
+        {
+            CheckBox checkBox => checkBox.Content?.ToString() ?? "(checkbox)",
+            Button button => button.Content?.ToString() ?? "(button)",
+            TextBox textBox => textBox.PlaceholderText ?? "(text field)",
+            ComboBox => "(dropdown)",
+            Border => "(game card or custom control)",
+            _ => "(other)"
+        };
+
+        Console.WriteLine(
+            $"[Controller Register] {control.GetType().Name}: {description}");
+    }
+
+    public void Unregister(Control control)
+    {
+        int index = _items.FindIndex(
+            item => ReferenceEquals(item.Control, control));
+
+        if (index < 0)
+            return;
+
+        if (_selectedIndex == index)
+        {
+            ClearSelection();
+        }
+        else if (_selectedIndex > index)
+        {
+            _selectedIndex--;
+        }
+
+        _items.RemoveAt(index);
     }
 
     public void RegisterButtons(Control root)
@@ -47,22 +86,50 @@ public sealed class ControllerFocusManager
                         Button.ClickEvent)));
         }
 
+        if (control is ComboBox comboBox && comboBox.IsEnabled)
+        {
+            Register(comboBox, () =>
+                comboBox.IsDropDownOpen = !comboBox.IsDropDownOpen);
+        }
+
+        if (control is TextBox textBox && textBox.IsEnabled)
+        {
+            Register(textBox, () => textBox.Focus());
+        }
+
+        if (control is CheckBox checkBox && checkBox.IsEnabled)
+        {
+            Register(checkBox, () =>
+                checkBox.IsChecked = checkBox.IsChecked != true);
+        }
+
+        // Traverse the logical control hierarchy first.
+        // This includes page content inside ScrollViewer.
         if (control is ContentControl content &&
-            content.Content is Control child)
-            Visit(child);
+            content.Content is Control contentChild)
+        {
+            Visit(contentChild);
+        }
 
         if (control is Panel panel)
-            foreach (var panelChild in panel.Children)
-                Visit(panelChild);
+        {
+            foreach (var child in panel.Children)
+                Visit(child);
+        }
 
         if (control is Decorator decorator &&
             decorator.Child is Control decoratedChild)
+        {
             Visit(decoratedChild);
+        }
 
-        if (control is ItemsControl items)
-            foreach (var item in items.Items)
-                if (item is Control itemControl)
-                    Visit(itemControl);
+        // Also discover controls created by Avalonia templates.
+        foreach (var visualChild in
+                 Avalonia.VisualTree.VisualExtensions.GetVisualChildren(control))
+        {
+            if (visualChild is Control child)
+                Visit(child);
+        }
     }
 
     public void ClearSelection()
@@ -73,8 +140,225 @@ public sealed class ControllerFocusManager
 
     public void SelectFirst()
     {
-        if (_items.Count > 0)
-            Select(0);
+        Console.WriteLine(
+            $"[Controller Focus] SelectFirst: Count={_items.Count}");
+
+        for (int i = 0; i < _items.Count; i++)
+        {
+            var control = _items[i].Control;
+            var root = TopLevel.GetTopLevel(control);
+
+            Console.WriteLine(
+                $"[Controller Focus] Index={i}, " +
+                $"Type={control.GetType().Name}, " +
+                $"Visible={control.IsVisible}, " +
+                $"Enabled={control.IsEnabled}, " +
+                $"Attached={root is not null}, " +
+                $"Bounds={control.Bounds}");
+
+            if (root is not null &&
+                control.IsVisible &&
+                control.IsEnabled &&
+                control.Bounds.Width > 0 &&
+                control.Bounds.Height > 0)
+            {
+                Select(i);
+                return;
+            }
+        }
+
+        Console.WriteLine("[Controller Focus] No usable controls found.");
+    }
+
+    // Navigate controls in registration order instead of screen position.
+    // Useful for forms and vertically arranged action lists.
+    public bool MoveSequential(int direction)
+    {
+        if (_items.Count == 0 || direction == 0)
+            return false;
+
+        if (_selectedIndex < 0)
+        {
+            SelectFirst();
+            return _selectedIndex >= 0;
+        }
+
+        for (int i = _selectedIndex + Math.Sign(direction);
+             i >= 0 && i < _items.Count;
+             i += Math.Sign(direction))
+        {
+            var control = _items[i].Control;
+
+            if (TopLevel.GetTopLevel(control) is null ||
+                !control.IsVisible ||
+                !control.IsEnabled ||
+                control.Bounds.Width <= 0 ||
+                control.Bounds.Height <= 0)
+                continue;
+
+            Select(i);
+            return true;
+        }
+
+        return false;
+    }
+
+    // For emulator action rows, preserve the Edit/Remove column
+    // when moving vertically. Other controls use registration order.
+    public bool MoveEmulatorVertical(int direction)
+    {
+        if (_items.Count == 0 || direction == 0)
+            return false;
+
+        if (_selectedIndex < 0)
+        {
+            SelectFirst();
+            return _selectedIndex >= 0;
+        }
+
+        var current = _items[_selectedIndex].Control;
+        string? column = current is Button button
+            ? button.Content?.ToString()
+            : null;
+
+        if (column != "Edit" && column != "Remove")
+            return MoveSequential(direction);
+
+        for (int i = _selectedIndex + Math.Sign(direction);
+             i >= 0 && i < _items.Count;
+             i += Math.Sign(direction))
+        {
+            var candidate = _items[i].Control;
+
+            if (candidate is not Button candidateButton ||
+                candidateButton.Content?.ToString() != column)
+                continue;
+
+            if (TopLevel.GetTopLevel(candidate) is null ||
+                !candidate.IsVisible ||
+                !candidate.IsEnabled ||
+                candidate.Bounds.Width <= 0 ||
+                candidate.Bounds.Height <= 0)
+                continue;
+
+            Select(i);
+            return true;
+        }
+
+        // At the end of the emulator list, continue to the
+        // downloads or Create button using normal navigation.
+        return MoveSequential(direction);
+    }
+
+    // Navigate emulator action columns and horizontal download buttons.
+    public bool MoveEmulatorNavigation(int dx, int dy)
+    {
+        if (_items.Count == 0)
+            return false;
+
+        if (_selectedIndex < 0)
+        {
+            SelectFirst();
+            return _selectedIndex >= 0;
+        }
+
+        bool Usable(Control control) =>
+            TopLevel.GetTopLevel(control) is not null &&
+            control.IsVisible &&
+            control.IsEnabled &&
+            control.Bounds.Width > 0 &&
+            control.Bounds.Height > 0;
+
+        string Label(Control control) =>
+            control is Button button
+                ? button.Content?.ToString() ?? ""
+                : "";
+
+        bool IsDownload(Control control) =>
+            Label(control).EndsWith(" ↗");
+
+        bool SelectMatching(int start, int step,
+            Func<Control, bool> matches)
+        {
+            for (int i = start;
+                 i >= 0 && i < _items.Count;
+                 i += step)
+            {
+                var candidate = _items[i].Control;
+
+                if (matches(candidate) && Usable(candidate))
+                {
+                    Select(i);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        var current = _items[_selectedIndex].Control;
+        var label = Label(current);
+
+        if (IsDownload(current))
+        {
+            if (dy > 0)
+                return false;
+
+            if (dy < 0)
+            {
+                if (SelectMatching(_selectedIndex - 1, -1,
+                    control => Label(control) == "Edit"))
+                    return true;
+
+                return SelectMatching(_selectedIndex - 1, -1,
+                    control => Label(control) ==
+                        "+ Create Emulator Profile");
+            }
+
+            if (dx != 0)
+                return SelectMatching(
+                    _selectedIndex + Math.Sign(dx),
+                    Math.Sign(dx),
+                    control => IsDownload(control));
+
+            return false;
+        }
+
+        if (dy != 0)
+        {
+            if (label == "Edit" || label == "Remove")
+            {
+                if (SelectMatching(
+                    _selectedIndex + Math.Sign(dy),
+                    Math.Sign(dy),
+                    control => Label(control) == label))
+                    return true;
+
+                if (dy > 0)
+                    return SelectMatching(0, 1, IsDownload);
+
+                return SelectMatching(_selectedIndex - 1, -1,
+                    control => Label(control) ==
+                        "+ Create Emulator Profile");
+            }
+
+            if (dy > 0 &&
+                label == "+ Create Emulator Profile")
+            {
+                if (SelectMatching(0, 1,
+                    control => Label(control) == "Edit"))
+                    return true;
+
+                return SelectMatching(0, 1, IsDownload);
+            }
+
+            return false;
+        }
+
+        if (dx != 0)
+            return MoveDirectional(dx, 0);
+
+        return false;
     }
 
     // dx/dy: -1, 0, or 1.
@@ -127,15 +411,46 @@ public sealed class ControllerFocusManager
             double forward = horizontal * dx + vertical * dy;
             double sideways = -horizontal * dy + vertical * dx;
 
+            // Ignore controls that are not actually in the
+            // requested direction.
             if (forward <= 5)
                 continue;
+
+            // Prefer controls whose horizontal or vertical
+            // ranges overlap with the current control.
+            var currentBounds = current.Bounds;
+            var candidateBounds = candidate.Bounds;
+
+            double currentHalfWidth = currentBounds.Width / 2;
+            double currentHalfHeight = currentBounds.Height / 2;
+            double candidateHalfWidth = candidateBounds.Width / 2;
+            double candidateHalfHeight = candidateBounds.Height / 2;
+
+            double perpendicularGap;
+
+            if (dx != 0)
+            {
+                perpendicularGap = Math.Max(
+                    0,
+                    Math.Abs(vertical) -
+                    currentHalfHeight -
+                    candidateHalfHeight);
+            }
+            else
+            {
+                perpendicularGap = Math.Max(
+                    0,
+                    Math.Abs(horizontal) -
+                    currentHalfWidth -
+                    candidateHalfWidth);
+            }
 
             // Favor controls in the requested direction,
             // with a penalty for moving across rows/columns.
             double score =
                 forward +
-                Math.Abs(sideways) * 2.5 +
-                (sideways * sideways) / (forward + 1);
+                perpendicularGap * 3.0 +
+                Math.Abs(sideways) * 0.1;
 
             if (score < bestScore)
             {
@@ -196,6 +511,34 @@ public sealed class ControllerFocusManager
             button.BorderBrush = Brushes.LimeGreen;
             button.BorderThickness = new Thickness(3);
         }
+        else if (control is ComboBox comboBox)
+        {
+            _highlightedControl = comboBox;
+            _originalBrush = comboBox.BorderBrush;
+            _originalThickness = comboBox.BorderThickness;
+
+            comboBox.BorderBrush = Brushes.LimeGreen;
+            comboBox.BorderThickness = new Thickness(3);
+        }
+
+        if (control is TextBox textBox)
+        {
+            _highlightedControl = textBox;
+            _originalBrush = textBox.BorderBrush;
+            _originalThickness = textBox.BorderThickness;
+
+            textBox.BorderBrush = Brushes.LimeGreen;
+            textBox.BorderThickness = new Thickness(3);
+        }
+        else if (control is CheckBox checkBox)
+        {
+            _highlightedControl = checkBox;
+            _originalBrush = checkBox.BorderBrush;
+            _originalThickness = checkBox.BorderThickness;
+
+            checkBox.BorderBrush = Brushes.LimeGreen;
+            checkBox.BorderThickness = new Thickness(3);
+        }
 
         control.BringIntoView();
     }
@@ -211,6 +554,22 @@ public sealed class ControllerFocusManager
         {
             button.BorderBrush = _originalBrush;
             button.BorderThickness = _originalThickness;
+        }
+        else if (_highlightedControl is ComboBox comboBox)
+        {
+            comboBox.BorderBrush = _originalBrush;
+            comboBox.BorderThickness = _originalThickness;
+        }
+
+        else if (_highlightedControl is TextBox textBox)
+        {
+            textBox.BorderBrush = _originalBrush;
+            textBox.BorderThickness = _originalThickness;
+        }
+        else if (_highlightedControl is CheckBox checkBox)
+        {
+            checkBox.BorderBrush = _originalBrush;
+            checkBox.BorderThickness = _originalThickness;
         }
 
         _highlightedControl = null;

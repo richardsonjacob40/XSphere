@@ -52,3 +52,15 @@ ArcadeHub_16_Avatars.zip
 
 # Duplicate avatar archive
 ArcadeHub_16_Avatars.zip
+
+# XSphere downloaded emulator installations
+/emulators/
+/downloads/
+/Emulators/
+/Downloads/
+
+# Generated application releases
+/publish/
+
+# Incomplete emulator downloads
+*.partial

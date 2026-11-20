@@ -18,13 +18,12 @@ public sealed class App : Application
     private ControllerBridgeService? _controllerBridgeService;
     private DispatcherTimer? _controllerTimer;
     private bool? _lastControllerConnected;
-    private bool _previousDpadDown;
-    private bool _previousDpadUp;
-    private bool _previousButtonA;
 
     private void StartWindowsControllerBridge()
     {
-        if (!OperatingSystem.IsLinux())
+        if (!OperatingSystem.IsLinux() ||
+            (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WSL_INTEROP")) &&
+             string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WSL_DISTRO_NAME"))))
             return;
 
         const string bridgePath =
@@ -89,9 +88,18 @@ public sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _controllerBridgeService = new ControllerBridgeService();
-            _controllerBridgeService.Start();
-            StartWindowsControllerBridge();
+            desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnMainWindowClose;
+            bool runningInWsl =
+                OperatingSystem.IsLinux() &&
+                (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WSL_INTEROP")) ||
+                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WSL_DISTRO_NAME")));
+
+            if (runningInWsl)
+            {
+                _controllerBridgeService = new ControllerBridgeService();
+                _controllerBridgeService.Start();
+                StartWindowsControllerBridge();
+            }
 
             // Unified Windows-to-WSL controller input handler.
             var controllerInputHandler = new ControllerInputHandler();
@@ -102,6 +110,7 @@ public sealed class App : Application
                     window.ControllerHandleInput(input);
             };
 
+            if (_controllerBridgeService is not null)
             _controllerBridgeService.ControllerStateReceived += values =>
             {
                 Dispatcher.UIThread.Post(() =>
@@ -171,39 +180,16 @@ public sealed class App : Application
                         {
                             _controllerService.UpdateInput();
 
-                            bool dpadDown =
-                                _controllerService.IsButtonPressed(
-                                    ControllerButton.DpadDown);
-
-                            bool dpadUp =
-                                _controllerService.IsButtonPressed(
-                                    ControllerButton.DpadUp);
-
-                            bool buttonA =
-                                _controllerService.IsButtonPressed(
-                                    ControllerButton.South);
-
-                            if (desktop.MainWindow is MainWindow window)
+                            if (!runningInWsl)
                             {
-                                if (dpadDown && !_previousDpadDown)
-                                    window.ControllerMoveSidebarSelection(1);
+                                var state = SdlControllerStateAdapter.Read(
+                                    _controllerService);
 
-                                if (dpadUp && !_previousDpadUp)
-                                    window.ControllerMoveSidebarSelection(-1);
-
-                                if (buttonA && !_previousButtonA)
-                                    window.ControllerActivateSidebarSelection();
+                                controllerInputHandler.Process(state);
                             }
-
-                            _previousDpadDown = dpadDown;
-                            _previousDpadUp = dpadUp;
-                            _previousButtonA = buttonA;
                         }
                         else
                         {
-                            _previousDpadDown = false;
-                            _previousDpadUp = false;
-                            _previousButtonA = false;
                         }
 
                         if (connected != _lastControllerConnected)

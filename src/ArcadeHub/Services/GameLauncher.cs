@@ -33,6 +33,8 @@ var includesRom = template.Contains(
 var romPath = game.FilePath;
 
 if (OperatingSystem.IsLinux() &&
+    (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WSL_INTEROP")) ||
+     !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WSL_DISTRO_NAME"))) &&
     emulator.ExecutablePath.EndsWith(
         ".exe", StringComparison.OrdinalIgnoreCase))
 {
@@ -61,7 +63,10 @@ if (OperatingSystem.IsLinux() &&
     }
 }
 
-var rendered = template.Replace(
+var resolvedTemplate = RetroArchArgumentResolver.Resolve(
+    template, game.System);
+
+var rendered = resolvedTemplate.Replace(
     "{rom}", romPath, StringComparison.OrdinalIgnoreCase);
 
         var startInfo = new ProcessStartInfo

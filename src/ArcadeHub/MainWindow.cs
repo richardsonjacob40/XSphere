@@ -143,16 +143,6 @@ public sealed class MainWindow : Window
     private static IBrush MainTextBrush =>
         Brush(ThemeColor("#F1F7F3", "#F1F7FF", "#FFF1F3", "#F7F1FF"));
 
-    private static readonly (string Name, string Url)[] EmulatorDownloads =
-    [
-        ("RetroArch", "https://www.retroarch.com/"),
-        ("Dolphin", "https://dolphin-emu.org/download/"),
-        ("PCSX2", "https://pcsx2.net/downloads/"),
-        ("RPCS3", "https://rpcs3.net/download"),
-        ("PPSSPP", "https://www.ppsspp.org/download/"),
-        ("mGBA", "https://mgba.io/downloads.html"),
-        ("melonDS", "https://melonds.kuribo64.net/downloads.php")
-    ];
 
     private readonly ArcadeDatabase _database = new();
     private readonly RomScanner _scanner = new();
@@ -2895,17 +2885,210 @@ private async Task DownloadGameCoverAsync(Game game)
         page.Children.Add(Text("Emulator downloads", 17, MainTextBrush, true));
         page.Children.Add(Text("These buttons open the emulator project's website. Review its instructions and install it yourself, then add its executable above.", 12, MutedBrush, wrapping: TextWrapping.Wrap));
         var downloads = new WrapPanel { Orientation = Orientation.Horizontal };
-        foreach (var item in EmulatorDownloads)
+        foreach (var item in EmulatorDownloadCatalog.Emulators)
         {
             var button = MakeButton(item.Name + " ↗", CardBrush, MainTextBrush);
             button.Margin = new Thickness(0, 0, 8, 8);
-            button.Click += (_, _) => OpenWebsite(item.Url);
+            button.Click += (_, _) => OpenWebsite(item.OfficialWebsite);
             downloads.Children.Add(button);
             _controllerFocus.Register(button, () =>
                 button.RaiseEvent(
                     new Avalonia.Interactivity.RoutedEventArgs(
                         Button.ClickEvent)));
         }
+        var dolphinInstall = MakeButton(
+            "Install Dolphin Automatically",
+            AccentBrush,
+            BackgroundBrush);
+
+        dolphinInstall.Margin = new Thickness(0, 8, 0, 8);
+
+        dolphinInstall.Click += async (_, _) =>
+        {
+            if (!_database.CanProfileManageEmulators(
+                _activeProfile?.Id))
+            {
+                SetStatus(
+                    "You do not have permission to install emulators.");
+                return;
+            }
+
+            bool isWindows = OperatingSystem.IsWindows();
+            bool isNativeLinux =
+                OperatingSystem.IsLinux() &&
+                !EmulatorPlatformService.IsWsl;
+
+            if (!isWindows && !isNativeLinux)
+            {
+                SetStatus(
+                    "Automatic Dolphin installation supports Windows and native Linux only.");
+                return;
+            }
+
+            if (isNativeLinux &&
+                !await FlatpakService.IsAvailableAsync())
+            {
+                SetStatus(
+                    "Flatpak is required for automatic Dolphin installation.");
+                return;
+            }
+
+            string installationSource = isWindows
+                ? "Windows Package Manager (WinGet)"
+                : "Flathub";
+
+            bool approved =
+                await EmulatorInstallConfirmation.ShowAsync(
+                    this,
+                    "Dolphin",
+                    installationSource);
+
+            if (!approved)
+            {
+                SetStatus("Dolphin installation cancelled.");
+                return;
+            }
+
+            dolphinInstall.IsEnabled = false;
+            SetStatus($"Installing Dolphin using {installationSource}...");
+
+            try
+            {
+                var installer = new DolphinInstallService();
+
+                if (isWindows)
+                {
+                    await installer.InstallOnWindowsAsync(
+                        userApproved: true);
+                }
+                else
+                {
+                    await installer.InstallOnLinuxAsync(
+                        userApproved: true);
+                }
+
+                RefreshData();
+
+                int created =
+                    await DolphinProfileRegistration.RegisterMissingProfilesAsync(
+                        _database,
+                        _emulators,
+                        _activeProfile?.Id);
+
+                RefreshData();
+
+                SetStatus(
+                    $"Dolphin installed successfully. Created {created} emulator profile(s).");
+
+                RenderCurrentPage();
+            }
+            catch (Exception ex)
+            {
+                SetStatus(
+                    "Dolphin installation failed: " + ex.Message);
+            }
+            finally
+            {
+                dolphinInstall.IsEnabled = true;
+            }
+        };
+
+        downloads.Children.Add(dolphinInstall);
+
+        _controllerFocus.Register(
+            dolphinInstall,
+            () => dolphinInstall.RaiseEvent(
+                new Avalonia.Interactivity.RoutedEventArgs(
+                    Button.ClickEvent)));
+
+
+        var retroArchInstall = MakeButton(
+            "Install RetroArch Automatically",
+            AccentBrush,
+            BackgroundBrush);
+
+        retroArchInstall.Margin = new Thickness(0, 8, 8, 8);
+
+        retroArchInstall.Click += async (_, _) =>
+        {
+            if (!_database.CanProfileManageEmulators(
+                _activeProfile?.Id))
+            {
+                SetStatus(
+                    "You do not have permission to install emulators.");
+                return;
+            }
+
+            bool isNativeLinux =
+                OperatingSystem.IsLinux() &&
+                !EmulatorPlatformService.IsWsl;
+
+            if (!isNativeLinux)
+            {
+                SetStatus(
+                    "Automatic RetroArch installation currently supports native Linux only. Use the RetroArch website for other platforms.");
+                return;
+            }
+
+            if (!await FlatpakService.IsAvailableAsync())
+            {
+                SetStatus(
+                    "Flatpak is required for automatic RetroArch installation.");
+                return;
+            }
+
+            bool approved =
+                await EmulatorInstallConfirmation.ShowAsync(
+                    this,
+                    "RetroArch",
+                    "Flathub");
+
+            if (!approved)
+            {
+                SetStatus("RetroArch installation cancelled.");
+                return;
+            }
+
+            retroArchInstall.IsEnabled = false;
+            SetStatus("Installing RetroArch using Flathub...");
+
+            try
+            {
+                var installer = new EmulatorFlatpakInstallService();
+
+                await installer.InstallAsync(
+                    "retroarch",
+                    userApproved: true);
+
+                bool installed = await FlatpakService.IsAppInstalledAsync(
+                    "org.libretro.RetroArch");
+
+                if (!installed)
+                    throw new InvalidOperationException(
+                        "RetroArch installation could not be verified.");
+
+                SetStatus(
+                    "RetroArch installed successfully. Configure its cores before registering game-system profiles. Launch arguments remain editable.");
+            }
+            catch (Exception ex)
+            {
+                SetStatus(
+                    "RetroArch installation failed: " + ex.Message);
+            }
+            finally
+            {
+                retroArchInstall.IsEnabled = true;
+            }
+        };
+
+        downloads.Children.Add(retroArchInstall);
+
+        _controllerFocus.Register(
+            retroArchInstall,
+            () => retroArchInstall.RaiseEvent(
+                new Avalonia.Interactivity.RoutedEventArgs(
+                    Button.ClickEvent)));
+
         page.Children.Add(downloads);
 
         return new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -2980,7 +3163,7 @@ private async Task DownloadGameCoverAsync(Game game)
         page.Children.Add(argsBox);
 
         page.Children.Add(Text(
-            "Use {rom} where the game file path should go.",
+            "Use {rom} for the game file path. For RetroArch, use {core} to automatically select an installed core for the game system. You can also enter a core path manually.",
             12, MutedBrush));
 
         var save = MakeButton(

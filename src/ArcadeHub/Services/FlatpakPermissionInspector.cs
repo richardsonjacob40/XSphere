@@ -10,6 +10,20 @@ public static class FlatpakPermissionInspector
     public static async Task<string> GetOverridesAsync(
         CancellationToken cancellationToken = default)
     {
+        return await GetOverridesAsync(
+            FlatpakService.DolphinAppId,
+            cancellationToken);
+    }
+
+    public static async Task<string> GetOverridesAsync(
+        string appId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(appId))
+            throw new ArgumentException(
+                "Flatpak application ID is required.",
+                nameof(appId));
+
         if (!OperatingSystem.IsLinux() ||
             EmulatorPlatformService.IsWsl)
         {
@@ -32,8 +46,7 @@ public static class FlatpakPermissionInspector
         startInfo.ArgumentList.Add("override");
         startInfo.ArgumentList.Add("--user");
         startInfo.ArgumentList.Add("--show");
-        startInfo.ArgumentList.Add(
-            FlatpakService.DolphinAppId);
+        startInfo.ArgumentList.Add(appId);
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException(

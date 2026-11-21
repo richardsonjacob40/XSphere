@@ -10,6 +10,20 @@ public static class FlatpakEffectivePermissions
     public static async Task<string> GetAsync(
         CancellationToken cancellationToken = default)
     {
+        return await GetAsync(
+            FlatpakService.DolphinAppId,
+            cancellationToken);
+    }
+
+    public static async Task<string> GetAsync(
+        string appId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(appId))
+            throw new ArgumentException(
+                "Flatpak application ID is required.",
+                nameof(appId));
+
         if (!OperatingSystem.IsLinux() ||
             EmulatorPlatformService.IsWsl)
         {
@@ -31,12 +45,11 @@ public static class FlatpakEffectivePermissions
 
         startInfo.ArgumentList.Add("info");
         startInfo.ArgumentList.Add("--show-permissions");
-        startInfo.ArgumentList.Add(
-            FlatpakService.DolphinAppId);
+        startInfo.ArgumentList.Add(appId);
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException(
-                "Could not inspect Dolphin permissions.");
+                "Could not inspect Flatpak permissions.");
 
         Task<string> outputTask =
             process.StandardOutput.ReadToEndAsync(
@@ -54,7 +67,7 @@ public static class FlatpakEffectivePermissions
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(
-                "Could not read Dolphin permissions: " + errors);
+                "Could not read Flatpak permissions: " + errors);
         }
 
         return output;

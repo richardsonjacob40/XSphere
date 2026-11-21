@@ -493,11 +493,17 @@ public sealed class MainWindow : Window
 
         Opened += async (_, _) =>
         {
+            if (_startupAnimationPlayed)
+                return;
+
+            _startupAnimationPlayed = true;
             await ShowXSphereStartupAsync();
         };
 
     }
 
+
+    private bool _startupAnimationPlayed;
 
     private async Task ShowXSphereStartupAsync()
     {
@@ -2807,6 +2813,57 @@ private async Task DownloadGameCoverAsync(Game game)
             };
 
             page.Children.Add(createButton);
+
+            if (OperatingSystem.IsLinux() &&
+                !EmulatorPlatformService.IsWsl)
+            {
+                var detectButton = MakeButton(
+                    "Auto-Detect Emulators",
+                    AccentBrush,
+                    BackgroundBrush);
+
+                detectButton.HorizontalAlignment =
+                    HorizontalAlignment.Left;
+
+                detectButton.Click += async (_, _) =>
+                {
+                    detectButton.IsEnabled = false;
+                    SetStatus("Scanning installed Linux emulators...");
+
+                    try
+                    {
+                        int created =
+                            await LinuxEmulatorProfileRegistration.RegisterAsync(
+                                _database,
+                                _activeProfile?.Id);
+
+                        RefreshData();
+
+                        SetStatus(
+                            $"Emulator detection complete. Created {created} profile(s).");
+
+                        RenderCurrentPage();
+                    }
+                    catch (Exception ex)
+                    {
+                        SetStatus(
+                            "Emulator detection failed: " + ex.Message);
+                    }
+                    finally
+                    {
+                        detectButton.IsEnabled = true;
+                    }
+                };
+
+                page.Children.Add(detectButton);
+
+                _controllerFocus.Register(
+                    detectButton,
+                    () => detectButton.RaiseEvent(
+                        new Avalonia.Interactivity.RoutedEventArgs(
+                            Button.ClickEvent)));
+            }
+
 
             _controllerFocus.Register(createButton, () =>
                 createButton.RaiseEvent(

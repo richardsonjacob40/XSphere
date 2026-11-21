@@ -49,29 +49,58 @@ public sealed class EmulatorFlatpakInstallService
             ?? throw new InvalidOperationException(
                 "Flatpak executable was not found.");
 
-        var startInfo = new ProcessStartInfo
+        if (await FlatpakService.IsAppInstalledAsync(
+            emulator.FlatpakAppId, cancellationToken))
+            return;
+
+        async Task<(int Code, string Message)> InstallInScopeAsync(string scope)
         {
-            FileName = executable,
-            UseShellExecute = false
-        };
+            var info = new ProcessStartInfo
+            {
+                FileName = executable,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
 
-        startInfo.ArgumentList.Add("install");
-        startInfo.ArgumentList.Add("--user");
-        startInfo.ArgumentList.Add("--noninteractive");
-        startInfo.ArgumentList.Add("-y");
-        startInfo.ArgumentList.Add("flathub");
-        startInfo.ArgumentList.Add(emulator.FlatpakAppId);
+            info.ArgumentList.Add("install");
+            info.ArgumentList.Add(scope);
+            info.ArgumentList.Add("--noninteractive");
+            info.ArgumentList.Add("-y");
+            info.ArgumentList.Add("flathub");
+            info.ArgumentList.Add(emulator.FlatpakAppId);
 
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException(
-                "Could not start Flatpak installation.");
+            using var process = Process.Start(info)
+                ?? throw new InvalidOperationException(
+                    "Could not start Flatpak installation.");
 
-        await process.WaitForExitAsync(cancellationToken);
+            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> errorTask = process.StandardError.ReadToEndAsync();
 
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"{emulator.Name} installation failed with exit code {process.ExitCode}.");
+            await process.WaitForExitAsync(cancellationToken);
+
+            string output = await outputTask;
+            string error = await errorTask;
+
+            return (process.ExitCode, (error + "\\n" + output).Trim());
         }
+
+        var user = await InstallInScopeAsync("--user");
+
+        if (user.Code == 0 &&
+            await FlatpakService.IsAppInstalledAsync(
+                emulator.FlatpakAppId, cancellationToken))
+            return;
+
+        var system = await InstallInScopeAsync("--system");
+
+        if (system.Code == 0 &&
+            await FlatpakService.IsAppInstalledAsync(
+                emulator.FlatpakAppId, cancellationToken))
+            return;
+
+        throw new InvalidOperationException(
+            $"{emulator.Name} installation failed. " +
+            $"User: {user.Message} System: {system.Message}");
     }
 }

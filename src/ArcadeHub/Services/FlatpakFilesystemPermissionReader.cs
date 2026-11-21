@@ -11,8 +11,19 @@ public static class FlatpakFilesystemPermissionReader
     public static async Task<IReadOnlyList<FlatpakFilesystemPermission>>
         GetAsync(CancellationToken cancellationToken = default)
     {
+        return await GetAsync(
+            FlatpakService.DolphinAppId,
+            cancellationToken);
+    }
+
+    public static async Task<IReadOnlyList<FlatpakFilesystemPermission>>
+        GetAsync(
+            string appId,
+            CancellationToken cancellationToken = default)
+    {
         string output =
             await FlatpakEffectivePermissions.GetAsync(
+                appId,
                 cancellationToken);
 
         var permissions =

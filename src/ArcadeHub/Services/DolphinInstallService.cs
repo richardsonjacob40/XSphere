@@ -81,37 +81,63 @@ public sealed class DolphinInstallService
                 "Flatpak installation requires native Linux.");
         }
 
-        if (!await FlatpakService.IsAvailableAsync(
-            cancellationToken))
+        if (!await FlatpakService.IsAvailableAsync(cancellationToken))
+            throw new InvalidOperationException("Flatpak is not installed.");
+
+        if (await FlatpakService.IsAppInstalledAsync(
+            FlatpakService.DolphinAppId, cancellationToken))
+            return;
+
+        string executable = FlatpakService.FindExecutable()
+            ?? throw new InvalidOperationException("Flatpak executable not found.");
+
+        async Task<(int ExitCode, string Error)> TryInstallAsync(string scope)
         {
-            throw new InvalidOperationException(
-                "Flatpak is not installed.");
+            var info = new ProcessStartInfo
+            {
+                FileName = executable,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true
+            };
+
+            info.ArgumentList.Add("install");
+            info.ArgumentList.Add(scope);
+            info.ArgumentList.Add("--noninteractive");
+            info.ArgumentList.Add("-y");
+            info.ArgumentList.Add("flathub");
+            info.ArgumentList.Add(FlatpakService.DolphinAppId);
+
+            using var process = Process.Start(info)
+                ?? throw new InvalidOperationException(
+                    "Could not start Flatpak installation.");
+
+            Task<string> errorTask = process.StandardError.ReadToEndAsync();
+            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+
+            await process.WaitForExitAsync(cancellationToken);
+
+            return (process.ExitCode,
+                (await errorTask + "\\n" + await outputTask).Trim());
         }
 
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "flatpak",
-            UseShellExecute = false
-        };
+        var userResult = await TryInstallAsync("--user");
 
-        startInfo.ArgumentList.Add("install");
-        startInfo.ArgumentList.Add("--user");
-        startInfo.ArgumentList.Add("--noninteractive");
-        startInfo.ArgumentList.Add("-y");
-        startInfo.ArgumentList.Add("flathub");
-        startInfo.ArgumentList.Add(
-            FlatpakService.DolphinAppId);
+        if (userResult.ExitCode == 0 &&
+            await FlatpakService.IsAppInstalledAsync(
+                FlatpakService.DolphinAppId, cancellationToken))
+            return;
 
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException(
-                "Could not start Flatpak installation.");
+        var systemResult = await TryInstallAsync("--system");
 
-        await process.WaitForExitAsync(cancellationToken);
+        if (systemResult.ExitCode == 0 &&
+            await FlatpakService.IsAppInstalledAsync(
+                FlatpakService.DolphinAppId, cancellationToken))
+            return;
 
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"Dolphin installation failed with exit code {process.ExitCode}.");
-        }
+        throw new InvalidOperationException(
+            "Dolphin installation failed. " +
+            "User installation: " + userResult.Error +
+            " System installation: " + systemResult.Error);
     }
 }

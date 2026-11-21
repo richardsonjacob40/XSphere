@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace ArcadeHub.Services;
 
@@ -17,9 +18,16 @@ public static class FlatpakRomAccessService
                 "Flatpak ROM access requires native Linux.");
         }
 
-        if (appId != FlatpakService.DolphinAppId)
+        bool supported = EmulatorDownloadCatalog.Emulators
+            .Any(emulator =>
+                string.Equals(
+                    emulator.FlatpakAppId,
+                    appId,
+                    StringComparison.OrdinalIgnoreCase));
+
+        if (!supported)
             throw new ArgumentException(
-                "Unsupported Flatpak application.",
+                "Unrecognized emulator Flatpak application.",
                 nameof(appId));
 
         string directory = Path.GetFullPath(romDirectory);

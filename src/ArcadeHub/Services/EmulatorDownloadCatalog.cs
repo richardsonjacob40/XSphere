@@ -50,7 +50,7 @@ public static class EmulatorDownloadCatalog
         {
             Id = "ppsspp",
             Name = "PPSSPP",
-            System = "PSP",
+            System = "PlayStation Portable",
             OfficialWebsite = "https://www.ppsspp.org/download/",
             FlatpakAppId = "org.ppsspp.PPSSPP",
             DefaultArguments = "\"{rom}\""
@@ -63,6 +63,16 @@ public static class EmulatorDownloadCatalog
             OfficialWebsite = "https://mgba.io/downloads.html",
             FlatpakAppId = "io.mgba.mGBA",
             FlatpakPublisherVerified = false,
+            DefaultArguments = "\"{rom}\""
+        },
+        new()
+        {
+            Id = "azahar",
+            Name = "Azahar",
+            System = "Nintendo 3DS",
+            OfficialWebsite = "https://azahar-emu.org/",
+            FlatpakAppId = "org.azahar_emu.Azahar",
+            ExecutableName = "azahar",
             DefaultArguments = "\"{rom}\""
         },
         new()

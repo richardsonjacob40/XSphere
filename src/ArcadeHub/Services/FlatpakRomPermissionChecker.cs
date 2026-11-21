@@ -12,6 +12,22 @@ public static class FlatpakRomPermissionChecker
         string romDirectory,
         CancellationToken cancellationToken = default)
     {
+        return await HasUserOverrideAsync(
+            FlatpakService.DolphinAppId,
+            romDirectory,
+            cancellationToken);
+    }
+
+    public static async Task<bool> HasUserOverrideAsync(
+        string appId,
+        string romDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(appId))
+            throw new ArgumentException(
+                "Flatpak application ID is required.",
+                nameof(appId));
+
         string directory = Path.GetFullPath(romDirectory);
 
         if (!Directory.Exists(directory))
@@ -20,6 +36,7 @@ public static class FlatpakRomPermissionChecker
 
         string overrides =
             await FlatpakPermissionInspector.GetOverridesAsync(
+                appId,
                 cancellationToken);
 
         string? filesystemsLine = overrides

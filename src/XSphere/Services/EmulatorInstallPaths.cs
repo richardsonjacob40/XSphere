@@ -7,16 +7,14 @@ public static class EmulatorInstallPaths
 {
     public static string RootDirectory =>
         Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
+            XSphereAppDataPaths.LocalApplicationData,
             "XSphere",
             "Emulators",
             EmulatorPlatformService.PlatformId);
 
     public static string DownloadsDirectory =>
         Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
+            XSphereAppDataPaths.LocalApplicationData,
             "XSphere",
             "Downloads",
             EmulatorPlatformService.PlatformId);

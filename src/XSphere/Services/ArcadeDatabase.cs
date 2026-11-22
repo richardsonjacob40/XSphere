@@ -12,8 +12,6 @@ public sealed class ArcadeDatabase
     {
         if (databasePath is null)
         {
-            var appData = Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData);
             var folder = XSphereDataMigration.XSphereDirectory;
             Directory.CreateDirectory(folder);
             databasePath = Path.Combine(folder, "xsphere.db");

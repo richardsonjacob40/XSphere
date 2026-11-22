@@ -7,8 +7,7 @@ namespace XSphere.Services;
 public static class XSphereDataMigration
 {
     public static string AppDataRoot =>
-        Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData);
+        XSphereAppDataPaths.LocalApplicationData;
 
     // Explicit override for isolated migration testing.
     // Normal application startup uses AppDataRoot.

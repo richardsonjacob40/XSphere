@@ -20,8 +20,7 @@ internal static class Program
 
             try
             {
-                var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                var logFolder = Path.Combine(appData, "XSphere");
+                var logFolder = Services.XSphereAppDataPaths.XSphereDirectory;
                 Directory.CreateDirectory(logFolder);
                 var logPath = Path.Combine(logFolder, "startup.log");
                 File.WriteAllText(logPath, message);

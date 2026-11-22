@@ -15,6 +15,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using XSphere.Models;
 using XSphere.Services;
+using XSphere.Controls;
 
 namespace XSphere;
 
@@ -160,6 +161,8 @@ public sealed class MainWindow : Window
         FindBackgroundTexture() => _backgroundTexture;
 
     private readonly ControllerFocusManager _controllerFocus = new();
+    private VirtualPinKeypad? _activePinKeypad;
+    private VirtualQwertyKeyboard? _activeQwertyKeyboard;
     private Grid _pageHost = new();
     private TextBlock _statusText = new();
     private TextBlock _pageTitle = new();
@@ -220,6 +223,18 @@ public sealed class MainWindow : Window
 
     public void ControllerHandleInput(string input)
     {
+        if (_activeQwertyKeyboard is not null)
+        {
+            _activeQwertyKeyboard.HandleControllerInput(input);
+            return;
+        }
+
+        if (_activePinKeypad is not null)
+        {
+            _activePinKeypad.HandleControllerInput(input);
+            return;
+        }
+
         Console.WriteLine(
             $"[Controller] Input={input}, Page={_currentPage}, " +
             $"FocusCount={_controllerFocus.Count}, PageFocused={_controllerPageFocused}");
@@ -797,6 +812,13 @@ public sealed class MainWindow : Window
         pinBox.MaxLength = 8;
         page.Children.Add(pinBox);
 
+        var showKeypad = MakeButton(
+            "Show PIN Keypad",
+            titaniumPanel,
+            titaniumText,
+            titanium: true);
+        page.Children.Add(showKeypad);
+
         var feedback = Text("", 13, Brush("#FB7185"));
         page.Children.Add(feedback);
 
@@ -876,8 +898,43 @@ public sealed class MainWindow : Window
 
         background.Children.Add(page);
 
+        var keypadOverlay = new Grid
+        {
+            Background = Brush("#CC090D18"),
+            IsVisible = false
+        };
+
+        var keypad = new VirtualPinKeypad(
+            pinBox,
+            () => unlock.RaiseEvent(
+                new Avalonia.Interactivity.RoutedEventArgs(
+                    Button.ClickEvent)))
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        keypadOverlay.Children.Add(keypad);
+        background.Children.Add(keypadOverlay);
+
+        void CloseKeypad()
+        {
+            keypadOverlay.IsVisible = false;
+            _activePinKeypad = null;
+        }
+
+        void OpenKeypad()
+        {
+            keypadOverlay.IsVisible = true;
+            _activePinKeypad = keypad;
+        }
+
+        keypad.CloseRequested += CloseKeypad;
+        showKeypad.Click += (_, _) => OpenKeypad();
+
         Content = BuildWindowFrame(background, titanium: true);
 
+        _activePinKeypad = null;
         _controllerProfileScreen = true;
         _controllerPageFocused = false;
         _controllerFocus.Clear();
@@ -885,6 +942,8 @@ public sealed class MainWindow : Window
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             _controllerFocus.RegisterButtons(page);
+            _controllerFocus.Unregister(pinBox);
+            _controllerFocus.Register(pinBox, OpenKeypad);
             _controllerFocus.SelectFirst();
         }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
@@ -2471,7 +2530,52 @@ button.VerticalContentAlignment =
         };
         _searchBox.TextChanged += (_, _) => RenderGameCards(favoritesOnly, _gameCountText);
         toolbar.Children.Add(_searchBox);
-        _controllerFocus.Register(_searchBox, () => _searchBox.Focus());
+        var searchInput = _searchBox;
+
+        void OpenSearchKeyboard()
+        {
+            if (_activeQwertyKeyboard is not null)
+                return;
+
+            var overlay = new Grid
+            {
+                Background = Brush("#CC090D18"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch
+            };
+
+            var keyboard = new VirtualQwertyKeyboard(searchInput);
+
+            overlay.Children.Add(keyboard);
+
+            void CloseKeyboard()
+            {
+                _activeQwertyKeyboard = null;
+                _pageHost.Children.Remove(overlay);
+            }
+
+            keyboard.CloseRequested += CloseKeyboard;
+
+            _activeQwertyKeyboard = keyboard;
+            _pageHost.Children.Add(overlay);
+        }
+
+        _controllerFocus.Register(_searchBox, OpenSearchKeyboard);
+
+        var showKeyboard = MakeButton(
+            "Show Keyboard",
+            CardBrush,
+            MainTextBrush);
+
+        showKeyboard.Height = 40;
+        showKeyboard.Click += (_, _) => OpenSearchKeyboard();
+
+        toolbar.Children.Add(showKeyboard);
+
+        _controllerFocus.Register(showKeyboard, () =>
+            showKeyboard.RaiseEvent(
+                new Avalonia.Interactivity.RoutedEventArgs(
+                    Button.ClickEvent)));
 
         if (!favoritesOnly)
         {

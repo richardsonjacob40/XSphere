@@ -35,7 +35,7 @@ ArcadeHub_16_Avatars.zip
 # Duplicate avatar archive
 ArcadeHub_16_Avatars.zip
 
-# ArcadeHub historical backups
+# XSphere and legacy ArcadeHub historical backups
 *.backup*
 *.working*
 *.pre-*
@@ -64,3 +64,6 @@ ArcadeHub_16_Avatars.zip
 
 # Incomplete emulator downloads
 *.partial
+
+# XSphere avatar archive
+XSphere_16_Avatars.zip

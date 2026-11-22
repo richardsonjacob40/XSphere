@@ -1,4 +1,4 @@
-# ArcadeHub build fixes
+# XSphere build fixes
 
 ## Fix 1: CS1736 (optional parameter default)
 
@@ -18,18 +18,18 @@ Replaced `TextBox.Watermark` with `TextBox.PlaceholderText`, the current Avaloni
 
 ## Rebuild
 
-From the folder containing `ArcadeHub.sln`, run:
+From the folder containing `XSphere.sln`, run:
 
 ```powershell
-dotnet clean src/ArcadeHub/ArcadeHub.csproj
-dotnet restore src/ArcadeHub/ArcadeHub.csproj
-dotnet build src/ArcadeHub/ArcadeHub.csproj
-dotnet run --project src/ArcadeHub/ArcadeHub.csproj
+dotnet clean src/XSphere/XSphere.csproj
+dotnet restore src/XSphere/XSphere.csproj
+dotnet build src/XSphere/XSphere.csproj
+dotnet run --project src/XSphere/XSphere.csproj
 ```
 
 
 ## Startup diagnostics update
 
 - Changed the project output type from `WinExe` to `Exe` temporarily so startup exceptions are visible in the terminal during testing.
-- Added exception reporting to the console and `%LOCALAPPDATA%\ArcadeHub\startup.log` if startup fails.
+- Added exception reporting to the console and `%LOCALAPPDATA%\XSphere\startup.log` if startup fails.
 - This is a diagnostic build; the console can be hidden again after the app has been verified.

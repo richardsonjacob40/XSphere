@@ -2,7 +2,7 @@
 from pathlib import Path
 import shutil
 
-path = Path("src/ArcadeHub/Services/RomScanner.cs")
+path = Path("src/XSphere/Services/RomScanner.cs")
 source = path.read_text()
 
 old = """                    var title = Path.GetFileNameWithoutExtension(file)

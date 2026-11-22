@@ -2,7 +2,7 @@
 from pathlib import Path
 import shutil
 
-path = Path("src/ArcadeHub/MainWindow.cs")
+path = Path("src/XSphere/MainWindow.cs")
 source = path.read_text()
 
 start_marker = "    private Control BuildHomePage()"
@@ -33,7 +33,7 @@ new_home = r'''
         };
 
         welcomeContent.Children.Add(
-            Text("●  ARCADEHUB CONSOLE", 12, AccentBrush, true));
+            Text("●  XSPHERE CONSOLE", 12, AccentBrush, true));
 
         welcomeContent.Children.Add(
             Text("Ready to play?", 36, MainTextBrush, true));

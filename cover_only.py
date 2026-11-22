@@ -1,7 +1,7 @@
 
 from pathlib import Path
 
-path = Path("src/ArcadeHub/MainWindow.cs")
+path = Path("src/XSphere/MainWindow.cs")
 source = path.read_text()
 
 start_marker = "    private Control BuildGameCard(Game game)"

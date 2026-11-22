@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 import shutil
 
-path = Path("src/ArcadeHub/MainWindow.cs")
+path = Path("src/XSphere/MainWindow.cs")
 source = path.read_text()
 
 marker = "// CONSOLE TABS FEATURE"

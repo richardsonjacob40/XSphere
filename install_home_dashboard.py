@@ -4,7 +4,7 @@ from datetime import datetime
 import re
 import shutil
 
-path = Path("src/ArcadeHub/MainWindow.cs")
+path = Path("src/XSphere/MainWindow.cs")
 source = path.read_text()
 
 # Prevent accidental duplicate installation.
@@ -54,7 +54,7 @@ dashboard = """
                 Spacing = 8,
                 Children =
                 {
-                    Text("WELCOME TO ARCADEHUB", 12, AccentBrush, true),
+                    Text("WELCOME TO XSPHERE", 12, AccentBrush, true),
                     Text("Your games. One place.", 28, MainTextBrush, true),
                     Text(
                         "Jump back into your favorites or explore your collection.",

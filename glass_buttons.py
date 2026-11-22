@@ -2,7 +2,7 @@
 from pathlib import Path
 import shutil
 
-path = Path("src/ArcadeHub/MainWindow.cs")
+path = Path("src/XSphere/MainWindow.cs")
 source = path.read_text()
 
 old = """    private static Button MakeButton(string label, IBrush background, IBrush foreground) => new()

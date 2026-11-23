@@ -66,8 +66,11 @@ if (OperatingSystem.IsLinux() &&
 var resolvedTemplate = RetroArchArgumentResolver.Resolve(
     template, game.System);
 
-var rendered = resolvedTemplate.Replace(
-    "{rom}", romPath, StringComparison.OrdinalIgnoreCase);
+// Tokenize the template BEFORE inserting the ROM path.
+// This preserves spaces even when the user leaves {rom} unquoted.
+var arguments = SplitArguments(resolvedTemplate)
+    .Select(argument => argument.Replace(
+        "{rom}", romPath, StringComparison.OrdinalIgnoreCase));
 
         var startInfo = new ProcessStartInfo
         {
@@ -76,7 +79,7 @@ var rendered = resolvedTemplate.Replace(
             WorkingDirectory = Path.GetDirectoryName(emulator.ExecutablePath) ?? Environment.CurrentDirectory
         };
 
-        foreach (var argument in SplitArguments(rendered)) startInfo.ArgumentList.Add(argument);
+        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
         if (!includesRom) startInfo.ArgumentList.Add(romPath);
 
         var launchedProcess = Process.Start(startInfo);

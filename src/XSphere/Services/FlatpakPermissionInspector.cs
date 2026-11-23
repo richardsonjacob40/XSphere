@@ -52,13 +52,12 @@ public static class FlatpakPermissionInspector
             ?? throw new InvalidOperationException(
                 "Could not inspect Flatpak permissions.");
 
-        string output = await process.StandardOutput.ReadToEndAsync(
-            cancellationToken);
-
-        string errors = await process.StandardError.ReadToEndAsync(
-            cancellationToken);
-
+        // Drain both redirected pipes concurrently to avoid deadlock.
+        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
+        string output = await outputTask;
+        string errors = await errorTask;
 
         if (process.ExitCode != 0)
         {

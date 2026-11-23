@@ -220,6 +220,9 @@ public sealed class MainWindow : Window
     private string? _controllerSortOriginal;
     private bool _controllerProfileScreen;
     private bool _controllerPageFocused;
+    private bool _controllerSliderAdjusting;
+    private Button? _controllerFullscreenButton;
+    private Button? _controllerExitButton;
 
     public void ControllerHandleInput(string input)
     {
@@ -248,21 +251,25 @@ public sealed class MainWindow : Window
             {
                 case "DpadUp":
                 case "YNegative":
+                case "RNegative":
                     _controllerFocus.MoveDirectional(0, -1);
                     break;
 
                 case "DpadDown":
                 case "YPositive":
+                case "RPositive":
                     _controllerFocus.MoveDirectional(0, 1);
                     break;
 
                 case "DpadLeft":
                 case "XNegative":
+                case "ZNegative":
                     _controllerFocus.MoveDirectional(-1, 0);
                     break;
 
                 case "DpadRight":
                 case "XPositive":
+                case "ZPositive":
                     _controllerFocus.MoveDirectional(1, 0);
                     break;
 
@@ -271,6 +278,58 @@ public sealed class MainWindow : Window
                     break;
             }
 
+            return;
+        }
+
+        // Allow the selected Settings slider to be adjusted
+        // without moving controller focus.
+        var selectedSlider = _controllerFocus.SelectedSlider;
+
+        if (_controllerSliderAdjusting)
+        {
+            if (!_controllerPageFocused ||
+                selectedSlider is null ||
+                !selectedSlider.IsEnabled)
+            {
+                _controllerSliderAdjusting = false;
+            }
+            else
+            {
+                switch (input)
+                {
+                    case "DpadLeft":
+                    case "XNegative":
+                    case "ZNegative":
+                        selectedSlider.Value = Math.Max(
+                            selectedSlider.Minimum,
+                            selectedSlider.Value - 5);
+                        return;
+
+                    case "DpadRight":
+                    case "XPositive":
+                    case "ZPositive":
+                        selectedSlider.Value = Math.Min(
+                            selectedSlider.Maximum,
+                            selectedSlider.Value + 5);
+                        return;
+
+                    case "A":
+                    case "B":
+                        _controllerSliderAdjusting = false;
+                        return;
+
+                    default:
+                        return;
+                }
+            }
+        }
+
+        if (_controllerPageFocused &&
+            selectedSlider is not null &&
+            input == "A")
+        {
+            _controllerSliderAdjusting = true;
+            selectedSlider.Focus();
             return;
         }
 
@@ -285,12 +344,14 @@ public sealed class MainWindow : Window
             {
                 case "DpadUp":
                 case "YNegative":
+                case "RNegative":
                     if (activeComboBox.SelectedIndex > 0)
                         activeComboBox.SelectedIndex--;
                     return;
 
                 case "DpadDown":
                 case "YPositive":
+                case "RPositive":
                     if (activeComboBox.SelectedIndex <
                         activeComboBox.ItemCount - 1)
                         activeComboBox.SelectedIndex++;
@@ -326,12 +387,15 @@ public sealed class MainWindow : Window
         {
             case "DpadUp":
             case "YNegative":
+                case "RNegative":
                 if (_controllerPageFocused)
                 {
                     if (_currentPage == "Emulators")
                         _controllerFocus.MoveEmulatorNavigation(0, -1);
-                    else
-                        _controllerFocus.MoveDirectional(0, -1);
+                    else if (!_controllerFocus.MoveDirectional(0, -1) &&
+                             _controllerFullscreenButton is not null)
+                        _controllerFocus.SelectControl(
+                            _controllerFullscreenButton);
                 }
                 else
                     ControllerMoveSidebarSelection(-1);
@@ -339,6 +403,7 @@ public sealed class MainWindow : Window
 
             case "DpadDown":
             case "YPositive":
+                case "RPositive":
                 if (_controllerPageFocused)
                 {
                     if (_currentPage == "Emulators")
@@ -352,6 +417,7 @@ public sealed class MainWindow : Window
 
             case "DpadRight":
             case "XPositive":
+                case "ZPositive":
                 if (!_controllerPageFocused && _controllerFocus.Count > 0)
                 {
                     _controllerPageFocused = true;
@@ -359,7 +425,16 @@ public sealed class MainWindow : Window
                 }
                 else if (_controllerPageFocused)
                 {
-                    if (_currentPage == "Emulators")
+                    if (_controllerFullscreenButton is not null &&
+                        _controllerExitButton is not null &&
+                        ReferenceEquals(
+                            _controllerFocus.SelectedControl,
+                            _controllerFullscreenButton))
+                    {
+                        _controllerFocus.SelectControl(
+                            _controllerExitButton);
+                    }
+                    else if (_currentPage == "Emulators")
                         _controllerFocus.MoveEmulatorNavigation(1, 0);
                     else
                         _controllerFocus.MoveDirectional(1, 0);
@@ -368,6 +443,7 @@ public sealed class MainWindow : Window
 
             case "DpadLeft":
             case "XNegative":
+                case "ZNegative":
                 if (_controllerPageFocused &&
                     !(_currentPage == "Emulators"
                         ? _controllerFocus.MoveEmulatorNavigation(-1, 0)
@@ -1588,7 +1664,7 @@ public sealed class MainWindow : Window
 
         var header = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
             Background = PanelBrush,
             Margin = new Thickness(0, 0, 0, 1)
         };
@@ -1610,11 +1686,36 @@ public sealed class MainWindow : Window
         Grid.SetColumn(modeButton, 2);
         header.Children.Add(modeButton);
 
+        var exitButton = MakeButton(
+            "Exit XSphere", CardBrush, MainTextBrush);
+
+        exitButton.Margin = new Thickness(0, 0, 22, 0);
+        exitButton.VerticalAlignment = VerticalAlignment.Center;
+        exitButton.Click += (_, _) => Close();
+
+        Grid.SetColumn(exitButton, 3);
+        header.Children.Add(exitButton);
+
+        _controllerFullscreenButton = modeButton;
+        _controllerExitButton = exitButton;
+
         body.Children.Add(header);
         _pageHost = new Grid { Margin = new Thickness(26, 24, 26, 24) };
         Grid.SetRow(_pageHost, 1);
         body.Children.Add(_pageHost);
         RenderCurrentPage();
+
+        // Register header actions after page controls so entering from the
+        // sidebar selects the page rather than Full Screen.
+        _controllerFocus.Register(modeButton, () =>
+            modeButton.RaiseEvent(
+                new Avalonia.Interactivity.RoutedEventArgs(
+                    Button.ClickEvent)));
+
+        _controllerFocus.Register(exitButton, () =>
+            exitButton.RaiseEvent(
+                new Avalonia.Interactivity.RoutedEventArgs(
+                    Button.ClickEvent)));
 
         Content = BuildWindowFrame(root);
     }
@@ -1896,6 +1997,8 @@ button.VerticalContentAlignment =
 
     private void RenderCurrentPage()
     {
+        // Clear stale controller registrations before rebuilding the page.
+        _controllerFocus.Clear();
         _pageHost.Children.Clear();
         _pageTitle.Text = _currentPage switch
         {
@@ -1921,6 +2024,26 @@ button.VerticalContentAlignment =
             _ => BuildLibraryPage(favoritesOnly: false)
         };
         _pageHost.Children.Add(page);
+
+        // Re-register the persistent header controls after page controls.
+        // The initial shell build registers these separately.
+        if (_controllerFullscreenButton is { } fullscreen &&
+            TopLevel.GetTopLevel(fullscreen) is not null)
+        {
+            _controllerFocus.Register(fullscreen, () =>
+                fullscreen.RaiseEvent(
+                    new Avalonia.Interactivity.RoutedEventArgs(
+                        Button.ClickEvent)));
+        }
+
+        if (_controllerExitButton is { } exitButton &&
+            TopLevel.GetTopLevel(exitButton) is not null)
+        {
+            _controllerFocus.Register(exitButton, () =>
+                exitButton.RaiseEvent(
+                    new Avalonia.Interactivity.RoutedEventArgs(
+                        Button.ClickEvent)));
+        }
     }
 
     
@@ -3473,7 +3596,7 @@ private async Task DownloadGameCoverAsync(Game game)
                     12, MutedBrush,
                     wrapping: TextWrapping.Wrap));
 
-            page.Children.Add(new Border
+            var saveCard = new Border
             {
                 Background = PanelBrush,
                 BorderBrush = GlassBorderBrush(),
@@ -3482,6 +3605,14 @@ private async Task DownloadGameCoverAsync(Game game)
                 CornerRadius = new CornerRadius(16),
                 Padding = new Thickness(18),
                 Child = info
+            };
+
+            page.Children.Add(saveCard);
+
+            _controllerFocus.Register(saveCard, () =>
+            {
+                SetStatus(location.Emulator + " saves: " +
+                    location.Directory);
             });
         }
 
@@ -4679,6 +4810,8 @@ private async Task DownloadGameCoverAsync(Game game)
             Child = applicationSection
         });
 
+        _controllerFocus.RegisterButtons(page);
+
         return new ScrollViewer
         {
             Content = page,
@@ -4724,6 +4857,8 @@ private async Task DownloadGameCoverAsync(Game game)
         }
 
         page.Children.Add(Text("Supported scan formats include NES, SNES, Game Boy, GBA, N64, DS, 3DS, and common disc/container formats such as ISO, CHD, RVZ, WBFS, ZIP, and 7Z. Disc formats may need the system name in their folder path for automatic system matching.", 11, MutedBrush, wrapping: TextWrapping.Wrap));
+        _controllerFocus.RegisterButtons(page);
+
         return new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }
 
@@ -4771,8 +4906,7 @@ private async Task DownloadGameCoverAsync(Game game)
                 return list;
             });
 
-            foreach (var game in discovered)
-                _database.SaveGame(game);
+            _database.SaveGamesBatch(discovered);
 
             var removed = _database.RemoveInvalidGameEntries();
             RefreshData();

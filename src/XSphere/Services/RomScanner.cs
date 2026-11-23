@@ -11,7 +11,7 @@ public sealed class RomScanner
         ".nes", ".sfc", ".smc",
         ".gb", ".gbc", ".gba",
         ".n64", ".z64", ".v64",
-        ".nds", ".3ds", ".cia",
+        ".nds", ".3ds", ".cia", ".zip", ".7z",
 
         // Disc-based systems
         ".iso", ".chd", ".cue",
@@ -34,7 +34,12 @@ public sealed class RomScanner
             {
                 foreach (var directory in Directory.EnumerateDirectories(current))
                 {
-                    try { pending.Push(directory); }
+                    try
+                    {
+                        // Avoid following symbolic-link directories into cycles.
+                        if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) == 0)
+                            pending.Push(directory);
+                    }
                     catch (UnauthorizedAccessException) { /* Skip folders the user cannot access. */ }
                 }
 

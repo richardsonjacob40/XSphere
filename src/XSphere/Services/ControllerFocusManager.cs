@@ -18,6 +18,18 @@ public sealed class ControllerFocusManager
 
     public int Count => _items.Count;
 
+    public Slider? SelectedSlider =>
+        _selectedIndex >= 0 &&
+        _selectedIndex < _items.Count
+            ? _items[_selectedIndex].Control as Slider
+            : null;
+
+    public Control? SelectedControl =>
+        _selectedIndex >= 0 &&
+        _selectedIndex < _items.Count
+            ? _items[_selectedIndex].Control
+            : null;
+
     public ComboBox? SelectedComboBox =>
         _selectedIndex >= 0 &&
         _selectedIndex < _items.Count
@@ -97,6 +109,11 @@ public sealed class ControllerFocusManager
             Register(textBox, () => textBox.Focus());
         }
 
+        if (control is Slider slider && slider.IsEnabled)
+        {
+            Register(slider, () => slider.Focus());
+        }
+
         if (control is CheckBox checkBox && checkBox.IsEnabled)
         {
             Register(checkBox, () =>
@@ -130,6 +147,23 @@ public sealed class ControllerFocusManager
             if (visualChild is Control child)
                 Visit(child);
         }
+    }
+
+    public bool SelectControl(Control control)
+    {
+        int index = _items.FindIndex(item =>
+            ReferenceEquals(item.Control, control));
+
+        if (index < 0 ||
+            !control.IsVisible ||
+            !control.IsEnabled ||
+            TopLevel.GetTopLevel(control) is null ||
+            control.Bounds.Width <= 0 ||
+            control.Bounds.Height <= 0)
+            return false;
+
+        Select(index);
+        return true;
     }
 
     public void ClearSelection()
@@ -521,7 +555,15 @@ public sealed class ControllerFocusManager
             comboBox.BorderThickness = new Thickness(3);
         }
 
-        if (control is TextBox textBox)
+        if (control is Slider slider)
+        {
+            _highlightedControl = slider;
+            _originalBrush = slider.BorderBrush;
+            _originalThickness = slider.BorderThickness;
+            slider.BorderBrush = Brushes.LimeGreen;
+            slider.BorderThickness = new Thickness(3);
+        }
+        else if (control is TextBox textBox)
         {
             _highlightedControl = textBox;
             _originalBrush = textBox.BorderBrush;
@@ -561,6 +603,11 @@ public sealed class ControllerFocusManager
             comboBox.BorderThickness = _originalThickness;
         }
 
+        else if (_highlightedControl is Slider slider)
+        {
+            slider.BorderBrush = _originalBrush;
+            slider.BorderThickness = _originalThickness;
+        }
         else if (_highlightedControl is TextBox textBox)
         {
             textBox.BorderBrush = _originalBrush;

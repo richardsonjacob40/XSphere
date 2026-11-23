@@ -1317,6 +1317,38 @@ public sealed class ArcadeDatabase
         command.ExecuteNonQuery();
     }
 
+    // Save a complete scan with one connection and transaction.
+    // Existing favorites and game IDs remain unchanged.
+    public void SaveGamesBatch(IEnumerable<Game> games)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO Games (Id, Title, System, FilePath, IsFavorite)
+            VALUES ($id, $title, $system, $path, $favorite)
+            ON CONFLICT(FilePath) DO UPDATE SET
+                Title = excluded.Title,
+                System = excluded.System;
+            """;
+        var id = command.Parameters.Add("$id", SqliteType.Text);
+        var title = command.Parameters.Add("$title", SqliteType.Text);
+        var system = command.Parameters.Add("$system", SqliteType.Text);
+        var path = command.Parameters.Add("$path", SqliteType.Text);
+        var favorite = command.Parameters.Add("$favorite", SqliteType.Integer);
+        foreach (var game in games)
+        {
+            id.Value = game.Id;
+            title.Value = game.Title;
+            system.Value = game.System;
+            path.Value = game.FilePath;
+            favorite.Value = game.IsFavorite ? 1 : 0;
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
     public int RemoveInvalidGameEntries()
 
     {
